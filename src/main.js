@@ -250,7 +250,23 @@ document.fonts.ready.then(() => {
 });
 
 const bootEarth = () => {
-  import("./earth.js").then((mod) => mod.createEarth(canvas)).then((renderer) => {
+  import("./earth.js").then((mod) => mod.createEarth(canvas, {
+    onRestored() {
+      needsResize = true;
+      scrolled = true;
+      if (reducedMotion) {
+        measureLayout();
+        earth.draw({
+          now: performance.now(),
+          scrollY: window.scrollY,
+          reduced: true,
+          layout,
+        });
+      } else {
+        ensureLoop();
+      }
+    },
+  })).then((renderer) => {
     earth = renderer;
     needsResize = true;
     canvas.classList.add("is-booting", "is-on");

@@ -460,7 +460,8 @@ function pose(scrollY, layout, mobile, ms) {
   return poseOut;
 }
 
-export function createEarth(canvas) {
+export function createEarth(canvas, options) {
+  const onRestored = options && options.onRestored;
   const mobileQuery = window.matchMedia("(max-width: 760px)");
   const gl = canvas.getContext("webgl", {
     alpha: false,
@@ -509,6 +510,7 @@ export function createEarth(canvas) {
       rebuilding = false;
       canvas.classList.add("is-booting", "is-on");
       impl.resize();
+      if (typeof onRestored === "function") onRestored();
     }).catch(() => {
       rebuilding = false;
       document.documentElement.classList.add("no-gl");

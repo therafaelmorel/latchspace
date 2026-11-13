@@ -67,39 +67,45 @@ function isLeap(year) {
   return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
 }
 
-// Day of year and UTC hours without allocating a Date.
-function utcDay(ms) {
-  let days = Math.floor(ms / DAY);
-  const tod = ms - days * DAY;
-  let year = 1970;
-  while (year < 4000) {
-    const span = isLeap(year) ? 366 : 365;
-    if (days < span) return { doy: days + 1, hours: tod / 3600000 };
-    days -= span;
-    year += 1;
-  }
-  return { doy: 1, hours: 0 };
+// 1-based day of year for a Unix day count. No allocation.
+function dayOfYear(unixDays) {
+  const z = unixDays + 719468;
+  const era = Math.floor(z / 146097);
+  const doe = z - era * 146097;
+  const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+  const year = yoe + era * 400;
+  const marchDay = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+  const mp = Math.floor((5 * marchDay + 2) / 153);
+  const month = mp + (mp < 10 ? 3 : -9);
+  const day = marchDay - Math.floor((153 * mp + 2) / 5) + 1;
+  const fullYear = year + (month <= 2 ? 1 : 0);
+  if (month > 2) return marchDay + (isLeap(fullYear) ? 61 : 60);
+  if (month === 2) return day + 31;
+  return day;
+}
+
+// Cached UTC midnight. The hot path only subtracts this from ms.
+let dayStart = Number.NaN;
+let dayNumber = 1;
+
+function syncDay(ms) {
+  if (ms >= dayStart && ms < dayStart + DAY) return;
+  const unixDays = Math.floor(ms / DAY);
+  dayStart = unixDays * DAY;
+  dayNumber = dayOfYear(unixDays);
 }
 
 // Sun direction in the same geographic frame. Declination is the day of year.
 // Hour angle puts local noon on the subsolar meridian. Simplified; no equation of time.
-const sunScratch = [0, 0, 1];
-let sunStamp = Number.NaN;
-
 export function sunDirectionInto(ms, out) {
-  if (ms !== sunStamp) {
-    sunStamp = ms;
-    const mark = utcDay(ms);
-    const decl = 23.44 * DEG * Math.sin((2 * Math.PI * (mark.doy - 81)) / 365);
-    const sub = -(mark.hours - 12) * 15 * DEG;
-    const cd = Math.cos(decl);
-    sunScratch[0] = cd * Math.sin(sub);
-    sunScratch[1] = Math.sin(decl);
-    sunScratch[2] = cd * Math.cos(sub);
-  }
-  out[0] = sunScratch[0];
-  out[1] = sunScratch[1];
-  out[2] = sunScratch[2];
+  syncDay(ms);
+  const hours = (ms - dayStart) / 3600000;
+  const decl = 23.44 * DEG * Math.sin((2 * Math.PI * (dayNumber - 81)) / 365);
+  const sub = -(hours - 12) * 15 * DEG;
+  const cd = Math.cos(decl);
+  out[0] = cd * Math.sin(sub);
+  out[1] = Math.sin(decl);
+  out[2] = cd * Math.cos(sub);
   return out;
 }
 
