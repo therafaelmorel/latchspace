@@ -143,7 +143,7 @@ function frame(now) {
     chapters?.resize();
   }
   const visible = sceneOn(scrollY) && !document.hidden;
-  const showEarth = !!earth && visible;
+  const showEarth = !!earth && !earth.lost && visible;
   if (showEarth) {
     canvas.classList.add("is-on");
     const drawStart = measure ? performance.now() : 0;
@@ -249,7 +249,7 @@ document.fonts.ready.then(() => {
   else chapters?.drawVisible(performance.now(), true);
 });
 
-requestAnimationFrame(() => {
+const bootEarth = () => {
   import("./earth.js").then((mod) => mod.createEarth(canvas)).then((renderer) => {
     earth = renderer;
     needsResize = true;
@@ -271,7 +271,12 @@ requestAnimationFrame(() => {
     document.documentElement.classList.add("no-gl");
     canvas.classList.remove("is-on");
   });
-});
+};
+if (typeof requestIdleCallback === "function") {
+  requestIdleCallback(bootEarth, { timeout: 1500 });
+} else {
+  setTimeout(bootEarth, 1);
+}
 
 if (!reducedMotion) ensureLoop();
 else armClock();

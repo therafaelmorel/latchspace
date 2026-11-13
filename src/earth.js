@@ -5,7 +5,7 @@
 // about 6.6; it is drawn at 1.72 so the ring fits the frame. The picture's clock
 // runs faster than UTC so motion is legible. See orbit.js.
 
-import { LEAD, SATS, orbitPoint, anomaly, sunDirection, visualNow } from "./orbit.js";
+import { LEAD, SATS, orbitPoint, anomaly, sunDirectionInto, visualNow } from "./orbit.js";
 
 const EARTH_VERT = `
 attribute vec3 position;
@@ -227,16 +227,18 @@ function lookAt(out, eye, center, up) {
   return out;
 }
 
-function mat3(m4) {
-  return [m4[0], m4[1], m4[2], m4[4], m4[5], m4[6], m4[8], m4[9], m4[10]];
+function mat3Into(m4, out) {
+  out[0] = m4[0]; out[1] = m4[1]; out[2] = m4[2];
+  out[3] = m4[4]; out[4] = m4[5]; out[5] = m4[6];
+  out[6] = m4[8]; out[7] = m4[9]; out[8] = m4[10];
+  return out;
 }
 
-function dirBy(m, v) {
-  return [
-    m[0] * v[0] + m[4] * v[1] + m[8] * v[2],
-    m[1] * v[0] + m[5] * v[1] + m[9] * v[2],
-    m[2] * v[0] + m[6] * v[1] + m[10] * v[2],
-  ];
+function dirInto(m, v, out) {
+  out[0] = m[0] * v[0] + m[4] * v[1] + m[8] * v[2];
+  out[1] = m[1] * v[0] + m[5] * v[1] + m[9] * v[2];
+  out[2] = m[2] * v[0] + m[6] * v[1] + m[10] * v[2];
+  return out;
 }
 
 function clamp01(t) {
@@ -295,18 +297,23 @@ function orbitLine(sat, segments) {
   return data;
 }
 
-function loadBitmap(url) {
+function loadBlob(url) {
   return fetch(url).then((res) => {
     if (!res.ok) throw new Error("Texture missing");
     return res.blob();
-  }).then((blob) => createImageBitmap(blob));
+  });
+}
+
+function nextFrame() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
 }
 
 function uploadTexture(gl, bitmap, unit) {
   const tex = gl.createTexture();
   gl.activeTexture(gl.TEXTURE0 + unit);
   gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, bitmap);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -322,17 +329,44 @@ function uploadTexture(gl, bitmap, unit) {
   return tex;
 }
 
-function sphEye(dist, az, el, target) {
+function sphEye(dist, az, el, target, out) {
   const ce = Math.cos(el);
-  return [
-    target[0] + dist * ce * Math.sin(az),
-    target[1] + dist * Math.sin(el),
-    target[2] + dist * ce * Math.cos(az),
-  ];
+  out[0] = target[0] + dist * ce * Math.sin(az);
+  out[1] = target[1] + dist * Math.sin(el);
+  out[2] = target[2] + dist * ce * Math.cos(az);
+  return out;
 }
 
+function lerp3(out, a, b, t) {
+  const x = a[0] + (b[0] - a[0]) * t;
+  const y = a[1] + (b[1] - a[1]) * t;
+  const z = a[2] + (b[2] - a[2]) * t;
+  out[0] = x;
+  out[1] = y;
+  out[2] = z;
+  return out;
+}
+
+const poseOut = { eye: [0, 0, 5], target: [0, 0, 0], radius: 5 };
+const camSun = [0, 0, 1];
+const heroEye = [0, 0, 5];
+const heroTarget = [0, 0, 0];
+const chaseEye = [0, 0, 5];
+const chaseTarget = [0, 0, 0];
+const endEye = [0, 0, 5];
+const endTarget = [0, 0, 0];
+const satNow = [0, 0, 0];
+const satAhead = [0, 0, 0];
+const pointScratch = [0, 0, 0];
+const normalMat = new Float32Array(9);
+const atmoNormal = new Float32Array(9);
+const sunView = new Float32Array(3);
+const upAxis = [0, 1, 0];
+const altUp = [0, 0, 1];
+
 function pose(scrollY, layout, mobile, ms) {
-  const sun = sunDirection(ms);
+  sunDirectionInto(ms, camSun);
+  const sun = camSun;
   const sunAz = Math.atan2(sun[0], sun[2]);
   const heroH = Math.max(1, layout.hero.height);
   const heroP = smooth(clamp01(scrollY / heroH));
@@ -345,44 +379,59 @@ function pose(scrollY, layout, mobile, ms) {
     const dist = lerp(6.9, 6.15, heroP);
     const el = 0.22;
     const az = sunAz + 0.35;
-    const target = [0, -0.55, 0];
     if (scrollY > brief.top - layout.vh * 0.2) {
-      return { eye: sphEye(6.4, sunAz + 0.2, 0.26, [0, -0.2, 0]), target: [0, -0.2, 0], radius: 6.4 };
+      poseOut.target[0] = 0;
+      poseOut.target[1] = -0.2;
+      poseOut.target[2] = 0;
+      sphEye(6.4, sunAz + 0.2, 0.26, poseOut.target, poseOut.eye);
+      poseOut.radius = 6.4;
+      return poseOut;
     }
-    return { eye: sphEye(dist, az, el, target), target, radius: dist };
+    poseOut.target[0] = 0;
+    poseOut.target[1] = -0.55;
+    poseOut.target[2] = 0;
+    sphEye(dist, az, el, poseOut.target, poseOut.eye);
+    poseOut.radius = dist;
+    return poseOut;
   }
 
   const heroDist = lerp(6.05, 3.35, heroP);
   const heroEl = lerp(0.36, 0.16, heroP);
   const heroAz = sunAz + lerp(1.05, 0.62, heroP);
-  const heroTarget = [lerp(-1.15, -0.4, heroP), lerp(-0.08, 0.04, heroP), 0];
-  const heroEye = sphEye(heroDist, heroAz, heroEl, heroTarget);
+  heroTarget[0] = lerp(-1.15, -0.4, heroP);
+  heroTarget[1] = lerp(-0.08, 0.04, heroP);
+  heroTarget[2] = 0;
+  sphEye(heroDist, heroAz, heroEl, heroTarget, heroEye);
 
   const nu = anomaly(LEAD, ms);
-  const sat = orbitPoint(LEAD.radius, LEAD.inc, LEAD.raan, nu);
-  const ahead = orbitPoint(LEAD.radius, LEAD.inc, LEAD.raan, nu + 0.35);
-  const sl = Math.hypot(sat[0], sat[1], sat[2]) || 1;
-  const radial = [sat[0] / sl, sat[1] / sl, sat[2] / sl];
-  let vx = ahead[0] - sat[0];
-  let vy = ahead[1] - sat[1];
-  let vz = ahead[2] - sat[2];
+  orbitPoint(LEAD.radius, LEAD.inc, LEAD.raan, nu, satNow);
+  orbitPoint(LEAD.radius, LEAD.inc, LEAD.raan, nu + 0.35, satAhead);
+  const sl = Math.hypot(satNow[0], satNow[1], satNow[2]) || 1;
+  const rx = satNow[0] / sl;
+  const ry = satNow[1] / sl;
+  const rz = satNow[2] / sl;
+  let vx = satAhead[0] - satNow[0];
+  let vy = satAhead[1] - satNow[1];
+  let vz = satAhead[2] - satNow[2];
   const vl = Math.hypot(vx, vy, vz) || 1;
   vx /= vl; vy /= vl; vz /= vl;
   const chaseT = smooth(clamp01((indP - 0.08) / 0.92));
   const alt = lerp(3.15, 1.28, chaseT);
   const side = lerp(0.72, 0.18, chaseT);
-  let eye = [
-    radial[0] * alt - vx * side,
-    radial[1] * alt - vy * side + lerp(0.38, 0.06, chaseT),
-    radial[2] * alt - vz * side,
-  ];
-  let elen = Math.hypot(eye[0], eye[1], eye[2]) || 1;
+  chaseEye[0] = rx * alt - vx * side;
+  chaseEye[1] = ry * alt - vy * side + lerp(0.38, 0.06, chaseT);
+  chaseEye[2] = rz * alt - vz * side;
+  let elen = Math.hypot(chaseEye[0], chaseEye[1], chaseEye[2]) || 1;
   const minR = lerp(1.9, 1.16, chaseT);
   if (elen < minR) {
-    eye = [eye[0] / elen * minR, eye[1] / elen * minR, eye[2] / elen * minR];
+    chaseEye[0] = chaseEye[0] / elen * minR;
+    chaseEye[1] = chaseEye[1] / elen * minR;
+    chaseEye[2] = chaseEye[2] / elen * minR;
   }
   const look = smooth(clamp01((chaseT - 0.35) / 0.65));
-  const target = [radial[0] * look * 0.94, radial[1] * look * 0.94, radial[2] * look * 0.94];
+  chaseTarget[0] = rx * look * 0.94;
+  chaseTarget[1] = ry * look * 0.94;
+  chaseTarget[2] = rz * look * 0.94;
 
   let blend = 0;
   if (scrollY + layout.vh * 0.35 >= ind.top && scrollY < brief.top) {
@@ -390,45 +439,28 @@ function pose(scrollY, layout, mobile, ms) {
   } else if (scrollY >= brief.top) {
     blend = 1;
   }
-  const mixedEye = [
-    lerp(heroEye[0], eye[0], blend),
-    lerp(heroEye[1], eye[1], blend),
-    lerp(heroEye[2], eye[2], blend),
-  ];
-  const mixedTarget = [
-    lerp(heroTarget[0], target[0], blend),
-    lerp(heroTarget[1], target[1], blend),
-    lerp(heroTarget[2], target[2], blend),
-  ];
+  lerp3(poseOut.eye, heroEye, chaseEye, blend);
+  lerp3(poseOut.target, heroTarget, chaseTarget, blend);
 
   if (scrollY + layout.vh * 0.15 > brief.top) {
     const pull = smooth(closeP);
     const endDist = lerp(3.3, 5.1, pull);
-    const endTarget = [lerp(-0.2, 0, pull), 0.05, 0];
-    const endEye = sphEye(endDist, sunAz + 0.4, lerp(0.22, 0.3, pull), endTarget);
-    return {
-      eye: [
-        lerp(mixedEye[0], endEye[0], pull),
-        lerp(mixedEye[1], endEye[1], pull),
-        lerp(mixedEye[2], endEye[2], pull),
-      ],
-      target: [
-        lerp(mixedTarget[0], endTarget[0], pull),
-        lerp(mixedTarget[1], endTarget[1], pull),
-        lerp(mixedTarget[2], endTarget[2], pull),
-      ],
-      radius: lerp(Math.hypot(mixedEye[0], mixedEye[1], mixedEye[2]), endDist, pull),
-    };
+    endTarget[0] = lerp(-0.2, 0, pull);
+    endTarget[1] = 0.05;
+    endTarget[2] = 0;
+    sphEye(endDist, sunAz + 0.4, lerp(0.22, 0.3, pull), endTarget, endEye);
+    const mixedR = Math.hypot(poseOut.eye[0], poseOut.eye[1], poseOut.eye[2]);
+    lerp3(poseOut.eye, poseOut.eye, endEye, pull);
+    lerp3(poseOut.target, poseOut.target, endTarget, pull);
+    poseOut.radius = mixedR + (endDist - mixedR) * pull;
+    return poseOut;
   }
 
-  return {
-    eye: mixedEye,
-    target: mixedTarget,
-    radius: Math.hypot(mixedEye[0], mixedEye[1], mixedEye[2]),
-  };
+  poseOut.radius = Math.hypot(poseOut.eye[0], poseOut.eye[1], poseOut.eye[2]);
+  return poseOut;
 }
 
-export async function createEarth(canvas) {
+export function createEarth(canvas) {
   const mobileQuery = window.matchMedia("(max-width: 760px)");
   const gl = canvas.getContext("webgl", {
     alpha: false,
@@ -438,7 +470,59 @@ export async function createEarth(canvas) {
     powerPreference: "high-performance",
     failIfMajorPerformanceCaveat: false,
   });
-  if (!gl) throw new Error("WebGL unavailable");
+  if (!gl) return Promise.reject(new Error("WebGL unavailable"));
+
+  const api = {
+    lost: false,
+    draw() {},
+    resize() {},
+  };
+  let rebuilding = false;
+
+  function adopt(impl) {
+    api.lost = false;
+    api.draw = (state) => {
+      if (api.lost) return;
+      impl.draw(state);
+    };
+    api.resize = () => {
+      if (api.lost) return;
+      impl.resize();
+    };
+  }
+
+  canvas.addEventListener("webglcontextlost", (event) => {
+    event.preventDefault();
+    api.lost = true;
+    api.draw = () => {};
+    api.resize = () => {};
+    document.documentElement.classList.add("no-gl");
+    canvas.classList.remove("is-on");
+  });
+
+  canvas.addEventListener("webglcontextrestored", () => {
+    if (rebuilding) return;
+    rebuilding = true;
+    document.documentElement.classList.remove("no-gl");
+    buildScene(gl, canvas, mobileQuery).then((impl) => {
+      adopt(impl);
+      rebuilding = false;
+      canvas.classList.add("is-booting", "is-on");
+      impl.resize();
+    }).catch(() => {
+      rebuilding = false;
+      document.documentElement.classList.add("no-gl");
+      canvas.classList.remove("is-on");
+    });
+  });
+
+  return buildScene(gl, canvas, mobileQuery).then((impl) => {
+    adopt(impl);
+    return api;
+  });
+}
+
+async function buildScene(gl, canvas, mobileQuery) {
 
   const earthProg = program(gl, EARTH_VERT, EARTH_FRAG);
   const atmoProg = program(gl, ATMO_VERT, ATMO_FRAG);
@@ -471,11 +555,15 @@ export async function createEarth(canvas) {
   gl.bindBuffer(gl.ARRAY_BUFFER, pointBuf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(SATS.length * 3), gl.DYNAMIC_DRAW);
 
-  const [dayBmp, nightBmp] = await Promise.all([
-    loadBitmap("/textures/earth-day.webp"),
-    loadBitmap("/textures/earth-night.webp"),
-  ]);
+  const mobileNow = mobileQuery.matches;
+  const dayUrl = mobileNow ? "/textures/earth-day-1024.webp" : "/textures/earth-day.webp";
+  const nightUrl = mobileNow ? "/textures/earth-night-1024.webp" : "/textures/earth-night.webp";
+  const [dayBlob, nightBlob] = await Promise.all([loadBlob(dayUrl), loadBlob(nightUrl)]);
+  const dayBmp = await createImageBitmap(dayBlob, { imageOrientation: "flipY" });
+  await nextFrame();
   uploadTexture(gl, dayBmp, 0);
+  const nightBmp = await createImageBitmap(nightBlob, { imageOrientation: "flipY" });
+  await nextFrame();
   uploadTexture(gl, nightBmp, 1);
 
   const proj = new Float32Array(16);
@@ -572,11 +660,12 @@ export async function createEarth(canvas) {
       cam.eye[1] - cam.target[1],
       cam.eye[2] - cam.target[2],
     ) || 1);
-    lookAt(view, cam.eye, cam.target, upDot > 0.92 ? [0, 0, 1] : [0, 1, 0]);
+    lookAt(view, cam.eye, cam.target, upDot > 0.92 ? altUp : upAxis);
     multiply(modelView, view, model);
     multiply(mvp, proj, modelView);
-    const sunView = dirBy(view, sunDirection(ms));
-    const normal = mat3(modelView);
+    sunDirectionInto(ms, camSun);
+    dirInto(view, camSun, sunView);
+    mat3Into(modelView, normalMat);
 
     gl.viewport(0, 0, width, height);
     gl.clearColor(0.047, 0.047, 0.043, 1);
@@ -590,7 +679,7 @@ export async function createEarth(canvas) {
     bindSphere(earthLoc.pos, earthLoc.uv);
     gl.uniformMatrix4fv(earthLoc.mv, false, modelView);
     gl.uniformMatrix4fv(earthLoc.proj, false, proj);
-    gl.uniformMatrix3fv(earthLoc.normal, false, normal);
+    gl.uniformMatrix3fv(earthLoc.normal, false, normalMat);
     gl.uniform3fv(earthLoc.sun, sunView);
     gl.uniform1i(earthLoc.day, 0);
     gl.uniform1i(earthLoc.night, 1);
@@ -603,7 +692,7 @@ export async function createEarth(canvas) {
     bindSphere(atmoLoc.pos, -1);
     gl.uniformMatrix4fv(atmoLoc.mv, false, atmoMV);
     gl.uniformMatrix4fv(atmoLoc.proj, false, proj);
-    gl.uniformMatrix3fv(atmoLoc.normal, false, mat3(atmoMV));
+    gl.uniformMatrix3fv(atmoLoc.normal, false, mat3Into(atmoMV, atmoNormal));
     gl.uniform3fv(atmoLoc.sun, sunView);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
@@ -622,12 +711,13 @@ export async function createEarth(canvas) {
       gl.drawArrays(gl.LINE_STRIP, 0, line.count);
     }
 
-    SATS.forEach((sat, i) => {
-      const p = orbitPoint(sat.radius, sat.inc, sat.raan, anomaly(sat, ms));
-      points[i * 3] = p[0];
-      points[i * 3 + 1] = p[1];
-      points[i * 3 + 2] = p[2];
-    });
+    for (let i = 0; i < SATS.length; i++) {
+      const sat = SATS[i];
+      orbitPoint(sat.radius, sat.inc, sat.raan, anomaly(sat, ms), pointScratch);
+      points[i * 3] = pointScratch[0];
+      points[i * 3 + 1] = pointScratch[1];
+      points[i * 3 + 2] = pointScratch[2];
+    }
     gl.bindBuffer(gl.ARRAY_BUFFER, pointBuf);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, points);
     gl.useProgram(pointProg);

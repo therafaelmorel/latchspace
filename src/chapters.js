@@ -51,6 +51,9 @@ function ndviColor(v) {
   return "rgb(" + c[0] + "," + c[1] + "," + c[2] + ")";
 }
 
+const NDVI_LEGEND = [];
+for (let i = 0; i < 80; i++) NDVI_LEGEND.push(ndviColor(i / 79));
+
 function ticks(ctx, w, h) {
   ctx.strokeStyle = FAINT;
   ctx.lineWidth = 1;
@@ -84,7 +87,6 @@ function drawDefense(ctx, w, h, t) {
   ];
   ctx.strokeStyle = FAINT;
   ctx.lineWidth = 1;
-  nodes[1] && ctx.beginPath();
   for (let i = 1; i <= 3; i++) {
     ctx.beginPath();
     ctx.arc(nodes[1].x, nodes[1].y, 28 + i * 22, 0, Math.PI * 2);
@@ -163,8 +165,8 @@ function drawAgriculture(ctx, w, h, t, plate) {
   ctx.stroke();
   const legendX = 16;
   const legendY = h - 28;
-  for (let i = 0; i < 80; i++) {
-    ctx.fillStyle = ndviColor(i / 79);
+  for (let i = 0; i < NDVI_LEGEND.length; i++) {
+    ctx.fillStyle = NDVI_LEGEND[i];
     ctx.fillRect(legendX + i, legendY, 1, 8);
   }
   label(ctx, "LOW", legendX, h - 8);
@@ -397,6 +399,9 @@ function drawMaritime(ctx, w, h, t) {
   label(ctx, "LANE PLOT", 16, h - 16);
 }
 
+const narrowQuery = window.matchMedia("(max-width: 760px)");
+const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+
 const DRAW = {
   defense: drawDefense,
   agriculture: drawAgriculture,
@@ -432,15 +437,14 @@ export function initChapters() {
       if (entry.isIntersecting) {
         plate.cssW = plate.canvas.clientWidth;
         plate.cssH = plate.canvas.clientHeight;
-        paint(plate, performance.now() / 1000, !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+        paint(plate, performance.now() / 1000, !reducedQuery.matches);
       }
     });
   }, { rootMargin: "240px 0px", threshold: 0.01 });
   plates.forEach((plate) => io.observe(plate.node));
 
   function fit(plate) {
-    const mobile = window.matchMedia("(max-width: 760px)").matches;
-    const dpr = Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, narrowQuery.matches ? 1.5 : 2);
     const w = plate.cssW || plate.canvas.clientWidth;
     const h = plate.cssH || plate.canvas.clientHeight;
     if (w < 2 || h < 2) return null;
@@ -483,7 +487,6 @@ export function initChapters() {
     },
     drawVisible(now, reduced) {
       plates.forEach((plate) => {
-        if (!plate.visible && plate.cssW === 0) return;
         if (plate.visible) paint(plate, now / 1000, !reduced);
       });
     },

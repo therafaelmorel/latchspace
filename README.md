@@ -41,7 +41,7 @@ Environment variables are not required.
 
 ## Brand
 
-- Inter only, self-hosted, `font-display: swap`. The subset is inlined into the stylesheet so the first paint does not fall through to another face. The same file is also at `public/fonts/inter.woff2` for the 404 page. License: `public/fonts/OFL.txt` (SIL Open Font License).
+- Inter only, self-hosted, `font-display: swap`. One subset lives at `src/fonts/inter.woff2` and is inlined into the stylesheet. The 404 page embeds that same subset. License: `public/fonts/OFL.txt` (SIL Open Font License). The subset includes the copyright sign, degree sign, middle dot, and em dash used on the page.
 - No italic, no serif, no second family in the UI.
 - LATCH SPACE, LATCH STUDIO, and any other LATCH name stay in capitals and do not wrap (`white-space: nowrap`).
 
@@ -62,7 +62,7 @@ Environment variables are not required.
 - `prefers-reduced-motion` freezes the globe, the plates, and the camera, and turns off smooth scrolling and the magnetic control.
 - There is no sound.
 
-Measured on this build, Lighthouse mobile (simulated throttling, local preview): performance 94, accessibility 100, best practices 100, SEO 100. Largest contentful paint 1.4 s, cumulative layout shift 0. During a scroll from the hero through the industry chapters at 1440×900, the globe draw itself was about 0.1 ms at the median and 2.2 ms at the worst sample. The frame interval in that headless session sat on a 30 Hz tick (median 33 ms), which is the browser's refresh in this environment, not the draw. A 60 Hz laptop has the same draw inside a 16.7 ms frame.
+On a mobile-sized viewport the globe draw stays under about 1 ms. Headless Chrome's animation tick here is 30 Hz. Lighthouse mobile on this VM's software renderer reports long GPU commits for both this branch and the previous commit, so the performance score moves with that renderer. A run of the review fixes scored performance 60, accessibility 100, LCP 1.4 s, CLS 0. The same harness on the previous commit scored performance 60. An earlier run, before the software path dominated, scored performance 94 with LCP 1.4 s and CLS 0.
 
 ## Accessibility
 

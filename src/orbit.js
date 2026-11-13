@@ -28,7 +28,7 @@ export function visualNow(now = performance.now(), reduced = false) {
   return date0 + (now - t0) * (LAPSE - 1);
 }
 
-export function orbitPoint(radius, incDeg, raan, nu) {
+export function orbitPoint(radius, incDeg, raan, nu, out) {
   const i = incDeg * DEG;
   const cO = Math.cos(raan);
   const sO = Math.sin(raan);
@@ -39,7 +39,11 @@ export function orbitPoint(radius, incDeg, raan, nu) {
   const classicX = radius * (cO * cu - sO * su * ci);
   const classicY = radius * (sO * cu + cO * su * ci);
   const classicZ = radius * su * si;
-  return [classicY, classicZ, classicX];
+  if (!out) return [classicY, classicZ, classicX];
+  out[0] = classicY;
+  out[1] = classicZ;
+  out[2] = classicX;
+  return out;
 }
 
 export function anomaly(sat, ms) {
@@ -59,21 +63,44 @@ export function subpoint(sat, ms) {
   return { lat, lon };
 }
 
+function isLeap(year) {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+// Day of year and UTC hours without allocating a Date.
+function utcDay(ms) {
+  let days = Math.floor(ms / DAY);
+  const tod = ms - days * DAY;
+  let year = 1970;
+  while (year < 4000) {
+    const span = isLeap(year) ? 366 : 365;
+    if (days < span) return { doy: days + 1, hours: tod / 3600000 };
+    days -= span;
+    year += 1;
+  }
+  return { doy: 1, hours: 0 };
+}
+
 // Sun direction in the same geographic frame. Declination is the day of year.
 // Hour angle puts local noon on the subsolar meridian. Simplified; no equation of time.
-export function sunDirection(ms) {
-  const year = new Date(ms).getUTCFullYear();
-  const day = (ms - Date.UTC(year, 0, 0)) / DAY;
-  const decl = 23.44 * DEG * Math.sin((2 * Math.PI * (day - 81)) / 365);
-  const date = new Date(ms);
-  const hours =
-    date.getUTCHours() +
-    date.getUTCMinutes() / 60 +
-    date.getUTCSeconds() / 3600 +
-    date.getUTCMilliseconds() / 3600000;
-  const sub = -(hours - 12) * 15 * DEG;
-  const cd = Math.cos(decl);
-  return [cd * Math.sin(sub), Math.sin(decl), cd * Math.cos(sub)];
+const sunScratch = [0, 0, 1];
+let sunStamp = Number.NaN;
+
+export function sunDirectionInto(ms, out) {
+  if (ms !== sunStamp) {
+    sunStamp = ms;
+    const mark = utcDay(ms);
+    const decl = 23.44 * DEG * Math.sin((2 * Math.PI * (mark.doy - 81)) / 365);
+    const sub = -(mark.hours - 12) * 15 * DEG;
+    const cd = Math.cos(decl);
+    sunScratch[0] = cd * Math.sin(sub);
+    sunScratch[1] = Math.sin(decl);
+    sunScratch[2] = cd * Math.cos(sub);
+  }
+  out[0] = sunScratch[0];
+  out[1] = sunScratch[1];
+  out[2] = sunScratch[2];
+  return out;
 }
 
 export function formatSubpoint(lat, lon) {
