@@ -1,16 +1,7 @@
 import { formatSubpoint, formatUTC, subpoint, LEAD, visualNow } from "./orbit.js";
-import { initChapters } from "./chapters.js";
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const mobileQuery = window.matchMedia("(max-width: 760px)");
 const finePointer = window.matchMedia("(pointer: fine)").matches;
-const measure = new URLSearchParams(location.search).has("measure");
-const frames = [];
-const drawMs = [];
-if (measure) {
-  window.__latchFrames = frames;
-  window.__drawMs = drawMs;
-}
 
 const canvas = document.getElementById("earth");
 const utcEl = document.getElementById("utc");
@@ -19,55 +10,38 @@ const orbitEl = document.getElementById("orbit-read");
 const indexBtn = document.getElementById("index-btn");
 const indexPanel = document.getElementById("index-panel");
 const folioLinks = [...document.querySelectorAll("[data-folio]")];
+const callouts = document.getElementById("callouts");
+const pinLines = [...document.querySelectorAll("[data-pin-line]")];
+const pinLabels = [...document.querySelectorAll("[data-pin-label]")];
+const offField = document.getElementById("off-read");
+const passButtons = [...document.querySelectorAll(".pass")];
 
-let earth = null;
-let chapters = null;
+const pass = { off: 18.4, lat: 34.052, lon: -118.244 };
+const industryBeats = new Set(["defense", "agriculture", "construction", "weather", "energy", "maritime"]);
+const craftBeats = new Set(["optics", "comms", "solar", "propulsion"]);
+
+let cinema = null;
 let raf = 0;
 let clockTimer = 0;
 let lastSecond = -1;
-let lastFrame = 0;
 let layout = null;
 let folioId = "";
 let needsResize = true;
 let scrolled = true;
 
-function box(id) {
-  const el = document.getElementById(id);
+function box(el, scrollY) {
   const rect = el.getBoundingClientRect();
-  const top = rect.top + window.scrollY;
-  return { top, height: rect.height, bottom: top + rect.height };
+  const top = rect.top + scrollY;
+  return { top, height: rect.height };
 }
 
 function measureLayout() {
   const y = window.scrollY;
   layout = {
-    hero: box("hero"),
-    industries: box("industries"),
-    briefing: box("briefing"),
     vh: window.innerHeight,
-    scenes: [...document.querySelectorAll("[data-scene]")].map((el) => {
-      const rect = el.getBoundingClientRect();
-      const top = rect.top + y;
-      return { id: el.id, top, bottom: top + rect.height, on: el.dataset.scene === "on" };
-    }),
-    sections: [...document.querySelectorAll("[data-section]")].map((el) => {
-      const rect = el.getBoundingClientRect();
-      return { id: el.dataset.section, top: rect.top + y };
-    }),
+    beats: [...document.querySelectorAll("[data-beat]")].map((el) => ({ id: el.dataset.beat, ...box(el, y) })),
+    sections: [...document.querySelectorAll("[data-section]")].map((el) => ({ id: el.dataset.section, ...box(el, y) })),
   };
-}
-
-function sceneOn(scrollY) {
-  if (!layout) return true;
-  const mid = scrollY + window.innerHeight * 0.42;
-  const hit = layout.scenes.find((scene) => mid >= scene.top && mid < scene.bottom);
-  if (!hit) return false;
-  if (mobileQuery.matches) {
-    const inHero = mid < layout.hero.bottom;
-    const inClose = mid > layout.briefing.top;
-    return (inHero || inClose) && hit.on;
-  }
-  return hit.on;
 }
 
 function updateClock(now, realMs = Date.now()) {
@@ -104,6 +78,28 @@ function updateFolio(scrollY) {
   });
 }
 
+function paintPins(pins) {
+  if (!callouts) return;
+  const show = pins && pins.length;
+  callouts.hidden = !show;
+  pinLines.forEach((line, i) => {
+    const pin = pins[i];
+    line.style.display = pin ? "" : "none";
+    if (!pin) return;
+    line.setAttribute("x1", pin.x.toFixed(1));
+    line.setAttribute("y1", pin.y.toFixed(1));
+    line.setAttribute("x2", pin.labelX.toFixed(1));
+    line.setAttribute("y2", (pin.labelY + 8).toFixed(1));
+  });
+  pinLabels.forEach((label, i) => {
+    const pin = pins[i];
+    label.hidden = !pin;
+    if (!pin) return;
+    if (label.textContent !== pin.label) label.textContent = pin.label;
+    label.style.transform = "translate3d(" + pin.labelX.toFixed(1) + "px," + pin.labelY.toFixed(1) + "px,0)";
+  });
+}
+
 function armClock() {
   if (clockTimer) return;
   const wait = 1020 - (Date.now() % 1000);
@@ -131,34 +127,33 @@ function ensureLoop() {
 
 function frame(now) {
   raf = requestAnimationFrame(frame);
-  if (measure && lastFrame) frames.push(now - lastFrame);
-  lastFrame = now;
   const scrollY = window.scrollY;
   updateClock(now);
   updateFolio(scrollY);
   if (needsResize) {
     needsResize = false;
     measureLayout();
-    earth?.resize();
-    chapters?.resize();
+    cinema?.resize();
   }
-  const visible = sceneOn(scrollY) && !document.hidden;
-  const showEarth = !!earth && !earth.lost && visible;
-  if (showEarth) {
-    canvas.classList.add("is-on");
-    const drawStart = measure ? performance.now() : 0;
-    earth.draw({
+  const lost = !!(cinema && cinema.lost);
+  if (cinema && !lost) {
+    const view = cinema.draw({
       now,
       scrollY,
       reduced: reducedMotion,
       layout,
+      pass,
     });
-    if (measure) drawMs.push(performance.now() - drawStart);
-  } else if (!visible) {
+    canvas.classList.add("is-on");
+    document.documentElement.classList.remove("no-gl");
+    paintPins(view.pins);
+    document.body.classList.toggle("is-industries", industryBeats.has(view.beat));
+    document.body.classList.toggle("is-craft", craftBeats.has(view.beat));
+  } else if (lost) {
     canvas.classList.remove("is-on");
+    paintPins([]);
   }
-  const plates = chapters ? chapters.tick(now, reducedMotion) : false;
-  const busy = (!reducedMotion && showEarth) || plates || scrolled;
+  const busy = (!reducedMotion && cinema && !lost) || scrolled;
   scrolled = false;
   if (document.hidden || !busy) stopLoop();
 }
@@ -171,15 +166,12 @@ function bindIndex() {
     indexBtn.setAttribute("aria-expanded", "false");
     if (returnFocus) indexBtn.focus();
   };
-  const open = () => {
-    indexPanel.hidden = false;
-    indexBtn.setAttribute("aria-expanded", "true");
-    const first = indexPanel.querySelector("a");
-    first?.focus();
-  };
   indexBtn.addEventListener("click", () => {
-    if (indexPanel.hidden) open();
-    else close(true);
+    if (indexPanel.hidden) {
+      indexPanel.hidden = false;
+      indexBtn.setAttribute("aria-expanded", "true");
+      indexPanel.querySelector("a")?.focus();
+    } else close(true);
   });
   indexPanel.addEventListener("click", (event) => {
     if (event.target.closest("a")) close(false);
@@ -205,8 +197,8 @@ function bindMagnetic() {
       if (!rect) return;
       const x = event.clientX - (rect.left + rect.width / 2);
       const y = event.clientY - (rect.top + rect.height / 2);
-      const tx = Math.max(-10, Math.min(10, x * 0.18));
-      const ty = Math.max(-8, Math.min(8, y * 0.28));
+      const tx = Math.max(-8, Math.min(8, x * 0.16));
+      const ty = Math.max(-6, Math.min(6, y * 0.22));
       el.style.transform = "translate3d(" + tx + "px," + ty + "px,0)";
     }, { passive: true });
     el.addEventListener("pointerleave", () => {
@@ -216,10 +208,33 @@ function bindMagnetic() {
   });
 }
 
+function bindPasses() {
+  passButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      pass.off = Number(button.dataset.off);
+      passButtons.forEach((other) => {
+        const on = other === button;
+        other.classList.toggle("is-selected", on);
+        other.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      if (offField) offField.textContent = pass.off.toFixed(1) + "°";
+      scrolled = true;
+      ensureLoop();
+      if (reducedMotion && cinema) {
+        measureLayout();
+        cinema.draw({ now: performance.now(), scrollY: window.scrollY, reduced: true, layout, pass });
+      }
+    });
+  });
+}
+
 window.addEventListener("scroll", () => {
   scrolled = true;
   updateFolio(window.scrollY);
   if (!reducedMotion) ensureLoop();
+  else if (cinema && !cinema.lost) {
+    cinema.draw({ now: performance.now(), scrollY: window.scrollY, reduced: true, layout, pass });
+  }
 }, { passive: true });
 
 window.addEventListener("resize", () => {
@@ -238,47 +253,43 @@ document.addEventListener("visibilitychange", () => {
 
 bindIndex();
 bindMagnetic();
-chapters = initChapters();
+bindPasses();
 measureLayout();
 updateClock(performance.now());
 updateFolio(window.scrollY);
-document.fonts.ready.then(() => {
-  needsResize = true;
-  chapters?.resize();
-  if (!reducedMotion) ensureLoop();
-  else chapters?.drawVisible(performance.now(), true);
-});
 
-const bootEarth = () => {
-  import("./earth.js").then((mod) => mod.createEarth(canvas, {
+function bootCinema() {
+  import("./cinema.js").then((mod) => mod.createCinema(canvas, {
     onRestored() {
       needsResize = true;
       scrolled = true;
       if (reducedMotion) {
         measureLayout();
-        earth.draw({
+        cinema?.draw({
           now: performance.now(),
           scrollY: window.scrollY,
           reduced: true,
           layout,
+          pass,
         });
       } else {
         ensureLoop();
       }
     },
-  })).then((renderer) => {
-    earth = renderer;
+  })).then((view) => {
+    if (!view) {
+      document.documentElement.classList.add("no-gl");
+      canvas.classList.remove("is-on");
+      return;
+    }
+    cinema = view;
     needsResize = true;
-    canvas.classList.add("is-booting", "is-on");
-    earth.resize();
+    canvas.classList.add("is-booting");
+    cinema.resize();
     if (reducedMotion) {
       measureLayout();
-      earth.draw({
-        now: performance.now(),
-        scrollY: window.scrollY,
-        reduced: true,
-        layout,
-      });
+      cinema.draw({ now: performance.now(), scrollY: window.scrollY, reduced: true, layout, pass });
+      canvas.classList.add("is-on");
     } else {
       scrolled = true;
       ensureLoop();
@@ -287,12 +298,12 @@ const bootEarth = () => {
     document.documentElement.classList.add("no-gl");
     canvas.classList.remove("is-on");
   });
-};
-if (typeof requestIdleCallback === "function") {
-  requestIdleCallback(bootEarth, { timeout: 1500 });
-} else {
-  setTimeout(bootEarth, 1);
 }
 
-if (!reducedMotion) ensureLoop();
-else armClock();
+requestAnimationFrame(bootCinema);
+
+document.fonts.ready.then(() => {
+  needsResize = true;
+  scrolled = true;
+  if (!reducedMotion) ensureLoop();
+});
