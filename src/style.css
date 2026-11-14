@@ -280,6 +280,10 @@ body.is-industries .rail {
   stroke-width: 1;
 }
 
+.callouts circle {
+  fill: rgba(230, 224, 212, 0.95);
+}
+
 .pin-label {
   position: absolute;
   left: 0;
@@ -289,6 +293,9 @@ body.is-industries .rail {
   letter-spacing: 0.04em;
   color: var(--bone);
   white-space: nowrap;
+  background: rgba(7, 8, 10, 0.82);
+  padding: 3px 8px;
+  border-left: 1px solid rgba(230, 224, 212, 0.7);
 }
 
 main { position: relative; z-index: 1; }
@@ -297,7 +304,7 @@ main { position: relative; z-index: 1; }
   min-height: 100dvh;
   display: flex;
   align-items: flex-end;
-  padding: calc(var(--header-h) + 12px) var(--pad) 48px;
+  padding: calc(var(--header-h) + 28px) var(--pad) 52px;
 }
 
 .stage-copy {
@@ -378,10 +385,10 @@ h3 { font-size: 18px; margin-top: 14px; line-height: 1.25; }
 }
 
 .console {
-  margin-top: 16px;
+  margin-top: 10px;
   border: 1px solid var(--line);
   background: rgba(7, 8, 10, 0.72);
-  padding: 12px 14px 14px;
+  padding: 8px 12px 10px;
   max-width: 440px;
 }
 
@@ -400,8 +407,8 @@ h3 { font-size: 18px; margin-top: 14px; line-height: 1.25; }
 .console-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px 16px;
-  margin: 12px 0;
+  gap: 4px 16px;
+  margin: 8px 0;
 }
 
 .console-fields div { min-width: 0; }
@@ -418,13 +425,13 @@ h3 { font-size: 18px; margin-top: 14px; line-height: 1.25; }
   font-variant-numeric: tabular-nums;
 }
 
-.passes { display: grid; gap: 6px; }
+.passes { display: grid; gap: 4px; }
 
 .passes button {
   width: 100%;
   text-align: left;
   border: 1px solid transparent;
-  padding: 8px 8px;
+  padding: 6px 8px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -433,9 +440,9 @@ h3 { font-size: 18px; margin-top: 14px; line-height: 1.25; }
 .phases, .commitments {
   list-style: none;
   padding: 0;
-  margin: 16px 0 0;
+  margin: 10px 0 0;
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .phases li, .commitments li {
@@ -446,11 +453,16 @@ h3 { font-size: 18px; margin-top: 14px; line-height: 1.25; }
   padding-top: 8px;
 }
 
-.commitments { grid-template-columns: 1fr 1fr; gap: 12px 18px; }
+.commitments { grid-template-columns: 1fr 1fr; gap: 8px 18px; }
 
-.commitments h3 { margin: 0 0 4px; font-size: 16px; }
+.commitments h3 { margin: 0 0 2px; font-size: 15px; }
 
-.security-close { margin-top: 16px; max-width: 40em; }
+.commitments p { font-size: 14px; line-height: 1.35; }
+
+#security h2,
+#console h2 { font-size: clamp(26px, 3.2vw, 40px); }
+
+.security-close { margin-top: 8px; max-width: 40em; font-size: 14px; line-height: 1.35; }
 
 .briefing-link {
   display: inline-block;
@@ -491,21 +503,31 @@ h3 { font-size: 18px; margin-top: 14px; line-height: 1.25; }
     padding: 56px 0 8px;
     width: 100%;
   }
-  body.is-industries .stage { padding-bottom: 58px; }
+  body.is-industries .stage { padding-bottom: 72px; }
   .rail {
     top: auto;
     bottom: 0;
     left: 0;
     right: 0;
     transform: none;
-    flex-direction: row;
-    gap: 14px;
-    padding: 8px var(--pad) 10px;
-    overflow-x: auto;
-    background: linear-gradient(transparent, #07080a 35%);
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px 6px;
+    padding: 8px 10px 12px;
+    overflow: hidden;
+    justify-items: center;
+    background: linear-gradient(transparent, #07080a 30%);
   }
-  .commitments { grid-template-columns: 1fr; }
+  .rail a {
+    font-size: 11px;
+    padding: 2px 0;
+    text-align: center;
+  }
   .deck, .lede { font-size: 16px; }
+}
+
+@media (max-width: 640px) {
+  .commitments { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 380px) {

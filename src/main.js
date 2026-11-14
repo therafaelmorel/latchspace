@@ -12,6 +12,7 @@ const indexPanel = document.getElementById("index-panel");
 const folioLinks = [...document.querySelectorAll("[data-folio]")];
 const callouts = document.getElementById("callouts");
 const pinLines = [...document.querySelectorAll("[data-pin-line]")];
+const pinDots = [...document.querySelectorAll("[data-pin-dot]")];
 const pinLabels = [...document.querySelectorAll("[data-pin-label]")];
 const offField = document.getElementById("off-read");
 const passButtons = [...document.querySelectorAll(".pass")];
@@ -78,25 +79,88 @@ function updateFolio(scrollY) {
   });
 }
 
+function visibleCopy() {
+  const nodes = document.querySelectorAll(".stage-copy");
+  let best = null;
+  let bestArea = 0;
+  nodes.forEach((el) => {
+    const rect = el.getBoundingClientRect();
+    const top = Math.max(rect.top, 0);
+    const bottom = Math.min(rect.bottom, window.innerHeight);
+    const area = Math.max(0, bottom - top) * rect.width;
+    if (area > bestArea) {
+      best = rect;
+      bestArea = area;
+    }
+  });
+  return best;
+}
+
+function placeLabel(pin) {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const width = 176;
+  const height = 24;
+  let x = pin.labelX;
+  let y = pin.labelY;
+  x = Math.max(8, Math.min(w - width - 8, x));
+  y = Math.max(76, Math.min(h - height - 12, y));
+  const copy = visibleCopy();
+  if (copy) {
+    const hit = x < copy.right && x + width > copy.left && y < copy.bottom && y + height > copy.top;
+    if (hit) {
+      const right = copy.right + 14;
+      if (right + width < w - 8) x = right;
+      else y = Math.max(76, copy.top - height - 10);
+    }
+  }
+  return { x, y };
+}
+
+function fadeCopies() {
+  const vh = window.innerHeight;
+  const header = 72;
+  document.querySelectorAll(".stage-copy").forEach((el) => {
+    const rect = el.getBoundingClientRect();
+    const mid = (rect.top + rect.bottom) * 0.5;
+    const center = vh * 0.68;
+    const dist = Math.abs(mid - center);
+    const fadeTop = Math.max(0, Math.min(1, (rect.bottom - header) / 90));
+    const fadeBot = Math.max(0, Math.min(1, (vh - 16 - rect.top) / 90));
+    const centerFade = 1 - Math.max(0, Math.min(1, (dist - vh * 0.22) / (vh * 0.38)));
+    let opacity = Math.min(fadeTop, fadeBot, 0.2 + 0.8 * centerFade);
+    if (reducedMotion) opacity = opacity > 0.45 ? 1 : 0;
+    el.style.opacity = opacity.toFixed(3);
+  });
+}
+
 function paintPins(pins) {
   if (!callouts) return;
   const show = pins && pins.length;
   callouts.hidden = !show;
   pinLines.forEach((line, i) => {
     const pin = pins[i];
+    const dot = pinDots[i];
     line.style.display = pin ? "" : "none";
+    if (dot) dot.style.display = pin ? "" : "none";
     if (!pin) return;
+    const label = placeLabel(pin);
     line.setAttribute("x1", pin.x.toFixed(1));
     line.setAttribute("y1", pin.y.toFixed(1));
-    line.setAttribute("x2", pin.labelX.toFixed(1));
-    line.setAttribute("y2", (pin.labelY + 8).toFixed(1));
+    line.setAttribute("x2", label.x.toFixed(1));
+    line.setAttribute("y2", (label.y + 11).toFixed(1));
+    if (dot) {
+      dot.setAttribute("cx", pin.x.toFixed(1));
+      dot.setAttribute("cy", pin.y.toFixed(1));
+    }
+    pin._label = label;
   });
   pinLabels.forEach((label, i) => {
     const pin = pins[i];
     label.hidden = !pin;
-    if (!pin) return;
+    if (!pin || !pin._label) return;
     if (label.textContent !== pin.label) label.textContent = pin.label;
-    label.style.transform = "translate3d(" + pin.labelX.toFixed(1) + "px," + pin.labelY.toFixed(1) + "px,0)";
+    label.style.transform = "translate3d(" + pin._label.x.toFixed(1) + "px," + pin._label.y.toFixed(1) + "px,0)";
   });
 }
 
@@ -149,6 +213,7 @@ function frame(now) {
     paintPins(view.pins);
     document.body.classList.toggle("is-industries", industryBeats.has(view.beat));
     document.body.classList.toggle("is-craft", craftBeats.has(view.beat));
+    fadeCopies();
   } else if (lost) {
     canvas.classList.remove("is-on");
     paintPins([]);
@@ -231,6 +296,7 @@ function bindPasses() {
 window.addEventListener("scroll", () => {
   scrolled = true;
   updateFolio(window.scrollY);
+  fadeCopies();
   if (!reducedMotion) ensureLoop();
   else if (cinema && !cinema.lost) {
     cinema.draw({ now: performance.now(), scrollY: window.scrollY, reduced: true, layout, pass });

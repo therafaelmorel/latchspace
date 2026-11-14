@@ -94,7 +94,6 @@ export function createSpacecraft() {
     roughness: 0.34,
     normalMap: crinkle(),
   });
-  const copper = new THREE.MeshStandardMaterial({ color: 0xb56a3a, metalness: 0.9, roughness: 0.28 });
   const sapphire = new THREE.MeshStandardMaterial({
     color: 0x071016,
     metalness: 1,
@@ -162,48 +161,69 @@ export function createSpacecraft() {
 
     const bore = new THREE.Group();
     group.add(bore);
-    const baffle = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.28, 40, 1, true), carbon);
-    baffle.rotation.x = Math.PI / 2;
-    baffle.position.z = hz * 0.42;
-    bore.add(baffle);
+    const objective = new THREE.MeshPhysicalMaterial({
+      color: 0x0b1424,
+      metalness: 0.22,
+      roughness: 0.04,
+      clearcoat: 1,
+      clearcoatRoughness: 0.06,
+      reflectivity: 0.72,
+      ior: 1.72,
+      emissive: 0x142448,
+      emissiveIntensity: 0.22,
+    });
+    const steps = [
+      { r0: 0.2, r1: 0.175, z: 0.72, len: 0.1 },
+      { r0: 0.155, r1: 0.132, z: 0.52, len: 0.1 },
+      { r0: 0.112, r1: 0.096, z: 0.32, len: 0.11 },
+    ];
+    steps.forEach((step) => {
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(step.r0, step.r1, step.len, 40, 1, true), carbon);
+      tube.rotation.x = Math.PI / 2;
+      tube.position.z = hz * step.z;
+      bore.add(tube);
+    });
     const mirror = new THREE.Mesh(
-      new THREE.CircleGeometry(0.24, 40),
-      new THREE.MeshStandardMaterial({ color: 0x0c1014, metalness: 1, roughness: 0.12, emissive: 0x102028, emissiveIntensity: 0.4 }),
+      new THREE.CircleGeometry(0.09, 40),
+      new THREE.MeshStandardMaterial({ color: 0x07090c, metalness: 1, roughness: 0.16, emissive: 0x0c1820, emissiveIntensity: 0.25 }),
     );
-    mirror.position.z = hz * 0.12;
+    mirror.position.z = hz * 0.2;
     bore.add(mirror);
-    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.22, 48), sapphire);
-    lens.position.z = hz * 0.9;
+    const lensR = Math.min(0.15, hz * 0.32);
+    const lens = new THREE.Mesh(
+      new THREE.SphereGeometry(lensR, 48, 24, 0, Math.PI * 2, 0, 0.72),
+      objective,
+    );
+    lens.rotation.x = Math.PI / 2;
+    lens.position.z = hz * 0.7;
     bore.add(lens);
-    const sheen = new THREE.Mesh(
-      new THREE.RingGeometry(0.15, 0.2, 48),
-      new THREE.MeshBasicMaterial({ color: 0xd7c7a2, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }),
-    );
-    sheen.position.z = hz * 0.93;
-    bore.add(sheen);
-    const amber = new THREE.Mesh(
-      new THREE.RingGeometry(0.1, 0.13, 40),
-      new THREE.MeshBasicMaterial({ color: 0xe0a15a, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false }),
-    );
-    amber.position.z = hz * 0.94;
-    bore.add(amber);
     for (let i = 0; i < 3; i += 1) {
-      const vane = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.012, 0.012), titanium);
-      vane.position.z = hz * 0.5;
+      const vane = new THREE.Mesh(new THREE.BoxGeometry(lensR * 2.1, 0.006, 0.006), new THREE.MeshStandardMaterial({
+        color: 0x8d969e,
+        metalness: 0.7,
+        roughness: 0.32,
+      }));
+      vane.position.z = hz * 0.86;
       vane.rotation.z = (i / 3) * Math.PI;
       bore.add(vane);
     }
-    const flange = new THREE.Mesh(new THREE.TorusGeometry(0.27, 0.014, 10, 48), titanium);
-    flange.position.z = hz * 0.9;
-    bore.add(flange);
-    mark(bore, anchors, "optics", 0, 0, hz * 0.96);
+    mark(bore, anchors, "optics", 0, 0, hz * 0.78);
 
     gimbal = new THREE.Group();
     gimbal.add(pod);
-    gimbal.position.set(hx * 0.92, -hy * 0.12, hz * 0.05);
-    gimbal.rotation.y = Math.PI / 2;
     group.add(gimbal);
-    mark(gimbal, anchors, "comms", 0, 0, podSize.z * 0.42);
+    const barrel = findNozzle(pod);
+    const dir = barrel.dir.clone().normalize();
+    gimbal.quaternion.setFromUnitVectors(dir, new THREE.Vector3(1, 0, 0));
+    const scalar = group.scale.x || 1;
+    group.scale.setScalar(1);
+    group.updateWorldMatrix(true, true);
+    const fitted = new THREE.Box3().setFromObject(gimbal);
+    group.scale.setScalar(scalar);
+    const mid = fitted.getCenter(new THREE.Vector3());
+    gimbal.position.set((hx + 0.42) - fitted.min.x, -hy * 0.36 - mid.y, -hz * 0.42 - mid.z);
+    seatEmitter(pod, barrel, objective);
+    mark(pod, anchors, "comms", barrel.center.x, barrel.center.y, barrel.center.z);
 
     const deck = new THREE.Mesh(new THREE.BoxGeometry(hx * 1.15, 0.03, hz * 1.35), arrayMat);
     deck.position.set(-hx * 0.05, -hy - 0.02, 0);
@@ -296,16 +316,32 @@ export function createSpacecraft() {
     built = true;
   }
 
-  const ready = (async () => {
-    await MeshoptDecoder.ready;
-    const loader = new GLTFLoader();
-    loader.setMeshoptDecoder(MeshoptDecoder);
-    const [busGltf, podGltf] = await Promise.all([
-      loader.loadAsync("/models/satellite_bus.glb"),
-      loader.loadAsync("/models/satellite_comms_pod.glb"),
-    ]);
-    assemble(busGltf.scene, podGltf.scene);
-  })();
+  let resolveReady = null;
+  let rejectReady = null;
+  const ready = new Promise((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+  let started = false;
+  function start() {
+    if (started) return;
+    started = true;
+    (async () => {
+      try {
+        await MeshoptDecoder.ready;
+        const loader = new GLTFLoader();
+        loader.setMeshoptDecoder(MeshoptDecoder);
+        const [busGltf, podGltf] = await Promise.all([
+          loader.loadAsync("/models/satellite_bus.glb"),
+          loader.loadAsync("/models/satellite_comms_pod.glb"),
+        ]);
+        assemble(busGltf.scene, podGltf.scene);
+        resolveReady();
+      } catch (err) {
+        rejectReady(err);
+      }
+    })();
+  }
 
   function update(dt, state) {
     if (!built) return;
@@ -343,5 +379,101 @@ export function createSpacecraft() {
     }
   }
 
-  return { group, anchors, update, ready };
+  return { group, anchors, update, ready, start };
+}
+
+function findNozzle(object) {
+  object.updateWorldMatrix(true, true);
+  const samples = [];
+  const v = new THREE.Vector3();
+  object.traverse((mesh) => {
+    if (!mesh.isMesh || !mesh.geometry) return;
+    const attr = mesh.geometry.getAttribute("position");
+    if (!attr) return;
+    const step = Math.max(1, Math.floor(attr.count / 9000));
+    for (let i = 0; i < attr.count; i += step) {
+      v.fromBufferAttribute(attr, i);
+      mesh.localToWorld(v);
+      object.worldToLocal(v);
+      samples.push(v.x, v.y, v.z);
+    }
+  });
+  const axes = [
+    [1, 0, 0], [-1, 0, 0],
+    [0, 1, 0], [0, -1, 0],
+    [0, 0, 1], [0, 0, -1],
+  ];
+  let best = null;
+  axes.forEach((axis) => {
+    let max = -Infinity;
+    for (let i = 0; i < samples.length; i += 3) {
+      const d = samples[i] * axis[0] + samples[i + 1] * axis[1] + samples[i + 2] * axis[2];
+      if (d > max) max = d;
+    }
+    const cluster = [];
+    for (let i = 0; i < samples.length; i += 3) {
+      const d = samples[i] * axis[0] + samples[i + 1] * axis[1] + samples[i + 2] * axis[2];
+      if (d > max - 0.04) cluster.push(i);
+    }
+    if (cluster.length < 6) return;
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    cluster.forEach((i) => {
+      cx += samples[i];
+      cy += samples[i + 1];
+      cz += samples[i + 2];
+    });
+    cx /= cluster.length;
+    cy /= cluster.length;
+    cz /= cluster.length;
+    let maxR = 0;
+    cluster.forEach((i) => {
+      const dx = samples[i] - cx;
+      const dy = samples[i + 1] - cy;
+      const dz = samples[i + 2] - cz;
+      maxR = Math.max(maxR, Math.hypot(dx, dy, dz));
+    });
+    // A nozzle cap is a compact disk on a protruding tip, not a broad body face.
+    if (maxR < 0.05 || maxR > 0.3) return;
+    let score = max - maxR * 0.4;
+    if (axis[2] === 1) score += 1.4;
+    if (!best || score > best.score) {
+      best = {
+        dir: new THREE.Vector3(axis[0], axis[1], axis[2]),
+        center: new THREE.Vector3(cx, cy, cz),
+        radius: maxR,
+        score,
+      };
+    }
+  });
+  if (!best) {
+    best = {
+      dir: new THREE.Vector3(0, 0, 1),
+      center: new THREE.Vector3(0, 0, 0.4),
+      radius: 0.18,
+      score: 0,
+    };
+  }
+  return best;
+}
+
+function seatEmitter(parent, barrel, lensMat) {
+  const shroudMat = new THREE.MeshStandardMaterial({ color: 0x14171b, metalness: 0.78, roughness: 0.34 });
+  const theta = 0.92;
+  const radius = barrel.radius / Math.sin(theta);
+  const shroud = new THREE.Mesh(
+    new THREE.CylinderGeometry(barrel.radius * 0.84, barrel.radius * 0.92, barrel.radius * 0.36, 36, 1, true),
+    shroudMat,
+  );
+  const lens = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 40, 20, 0, Math.PI * 2, 0, theta),
+    lensMat,
+  );
+  const outward = barrel.dir.clone().normalize();
+  shroud.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), outward);
+  lens.quaternion.copy(shroud.quaternion);
+  shroud.position.copy(barrel.center).addScaledVector(outward, -barrel.radius * 0.16);
+  lens.position.copy(barrel.center).addScaledVector(outward, -radius * Math.cos(theta));
+  parent.add(shroud, lens);
 }

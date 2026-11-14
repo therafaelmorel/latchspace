@@ -14,9 +14,9 @@ const INDUSTRY = {
   maritime: [2.7, 102.4],
 };
 const TOUR = {
-  optics: { eye: [0.22, 0.32, 2.35], look: [0, 0.02, 0.36], pins: [["optics", "Multispectral telescope"]] },
-  comms: { eye: [2.35, 0.15, 1.45], look: [0.72, -0.12, 0.12], pins: [["comms", "Laser-com terminal"], ["array", "Ka/X-band array"]] },
-  solar: { eye: [0.55, 1.15, 2.45], look: [1.15, 0.15, 0.05], pins: [["solar", "Solar wing"], ["mli", "Kapton MLI"]] },
+  optics: { relative: true, eye: [0.7, 0.18, 0.42], pins: [["optics", "Multispectral telescope"]] },
+  comms: { relative: true, eye: [0.7, 0.1, 0.14], pins: [["comms", "Laser-com terminal"], ["array", "Ka/X-band array"]] },
+  solar: { relative: true, eye: [-0.55, 0.72, 1.45], pins: [["solar", "Solar wing"], ["mli", "Kapton MLI"]] },
   propulsion: { eye: [1.15, 0.48, -1.85], look: [0.05, 0.08, -0.62], pins: [["thruster", "Hall thruster"], ["tracker", "Star tracker"]] },
 };
 const PIN_BEATS = new Set(["optics", "comms", "solar", "propulsion"]);
@@ -98,6 +98,15 @@ function fillPose(id, ctx, out) {
   const s = ctx.sun;
   sideOf(s);
   if (id === "hero") {
+    const portrait = (ctx.aspect || 1) < 0.85;
+    if (portrait) {
+      eyeD.copy(side).multiplyScalar(4.6).addScaledVector(s, 0.35).addScaledVector(UP, 0.12);
+      const view = tmp.copy(eyeD).normalize();
+      satD.copy(view).multiplyScalar(1.82).addScaledVector(UP, 0.48);
+      tgtD.copy(view).multiplyScalar(0.85);
+      place(out, eyeD, tgtD, satD, "beauty", { cloud: 1, orbits: 0.35 });
+      return;
+    }
     eyeD.copy(s).multiplyScalar(1.15).addScaledVector(side, 2.95).addScaledVector(UP, 0.58);
     tgtD.copy(s).multiplyScalar(0.12);
     const sweep = ctx.reduced ? 0 : Math.sin(ctx.now * 0.00012) * 0.08;
@@ -349,6 +358,21 @@ export function createCinema(canvas, { onRestored }) {
 
   earth.ready.catch((err) => console.error(err));
   craft.ready.catch((err) => console.error(err));
+  let kicked = false;
+
+  function tourVectors(spec, outEye, outLook) {
+    const anchor = spec.relative ? craft.anchors[spec.pins[0][0]] : null;
+    if (anchor) {
+      anchor.getWorldPosition(outLook);
+      craft.group.worldToLocal(outLook);
+      outEye.set(outLook.x + spec.eye[0], outLook.y + spec.eye[1], outLook.z + spec.eye[2]);
+      outEye.applyMatrix4(craft.group.matrixWorld);
+      outLook.applyMatrix4(craft.group.matrixWorld);
+      return;
+    }
+    outEye.set(spec.eye[0], spec.eye[1], spec.eye[2]).applyMatrix4(craft.group.matrixWorld);
+    outLook.set(spec.look[0], spec.look[1], spec.look[2]).applyMatrix4(craft.group.matrixWorld);
+  }
 
   function resize() {
     const w = window.innerWidth;
@@ -366,7 +390,13 @@ export function createCinema(canvas, { onRestored }) {
     last = now;
     sunDirectionInto(Date.now(), sunArr);
     sun.set(sunArr[0], sunArr[1], sunArr[2]).normalize();
-    const ctx = { now, reduced: state.reduced, sun, pass: state.pass };
+    const ctx = {
+      now,
+      reduced: state.reduced,
+      sun,
+      pass: state.pass,
+      aspect: camera.aspect || window.innerWidth / Math.max(1, window.innerHeight),
+    };
     const beats = state.layout?.beats || [];
     const loc = locate(state.scrollY, state.layout?.vh || window.innerHeight, beats);
     const idA = beats[loc.i]?.id || "hero";
@@ -399,9 +429,9 @@ export function createCinema(canvas, { onRestored }) {
     let desiredTgt = tgtD;
     if (tourWeight > 0.02 && TOUR[tour || poseB.tour || poseA.tour]) {
       const spec = TOUR[tour || (k > 0.5 ? poseB.tour : poseA.tour)] || TOUR.optics;
-      local.set(spec.eye[0], spec.eye[1], spec.eye[2]).applyMatrix4(craft.group.matrixWorld);
+      tourVectors(spec, local, tmpB);
       tmp.copy(local);
-      local.set(spec.look[0], spec.look[1], spec.look[2]).applyMatrix4(craft.group.matrixWorld);
+      local.copy(tmpB);
       if (tourWeight > 0.98) {
         desiredEye = tmp;
         desiredTgt = local;
@@ -410,7 +440,7 @@ export function createCinema(canvas, { onRestored }) {
         desiredTgt = tgtD.lerp(local, tourWeight);
       }
     }
-    const f = state.reduced || !booted ? 1 : 1 - Math.exp(-10 * dt);
+    const f = state.reduced || !booted ? 1 : 1 - Math.exp(-14 * dt);
     if (tourWeight > 0.98) {
       shown.eye.copy(desiredEye);
       shown.target.copy(desiredTgt);
@@ -466,6 +496,18 @@ export function createCinema(canvas, { onRestored }) {
 
     renderer.render(scene, camera);
     booted = true;
+    if (!kicked) {
+      kicked = true;
+      const kick = () => {
+        Promise.resolve(earth.loadRest()).then(() => {
+          const launch = () => craft.start();
+          if (typeof requestIdleCallback === "function") requestIdleCallback(launch, { timeout: 240 });
+          else setTimeout(launch, 120);
+        }).catch((err) => console.error(err));
+      };
+      if (typeof requestIdleCallback === "function") requestIdleCallback(kick, { timeout: 480 });
+      else setTimeout(kick, 120);
+    }
     pins.length = 0;
     if (tour && PIN_BEATS.has(tour) && tourWeight > 0.62) {
       const spec = TOUR[tour];

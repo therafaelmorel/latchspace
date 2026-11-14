@@ -43,13 +43,19 @@ const EARTH_FRAG = `
     day = mix(day, vec3(0.035, 0.11, 0.22), (1.0 - land) * (1.0 - hasDay));
     vec3 night = texture2D(nightMap, uv).rgb * hasNight;
     float specMask = mix(1.0 - land, texture2D(specMap, uv).r, hasSpec);
-    if (hasBump > 0.5) {
-      float h = texture2D(bumpMap, uv).r;
-      float hu = texture2D(bumpMap, uv + vec2(0.0016, 0.0)).r;
-      float hv = texture2D(bumpMap, uv + vec2(0.0, 0.0016)).r;
-      vec3 t = normalize(dFdx(vWorld));
-      vec3 b = normalize(dFdy(vWorld));
-      n = normalize(n + t * (h - hu) * 1.05 + b * (h - hv) * 1.05);
+    float landMask = hasSpec > 0.5 ? (1.0 - texture2D(specMap, uv).r) : land;
+    if (hasBump > 0.5 && landMask > 0.02) {
+      float texel = 0.00115;
+      float hR = texture2D(bumpMap, uv + vec2(texel, 0.0)).r;
+      float hL = texture2D(bumpMap, uv - vec2(texel, 0.0)).r;
+      float hU = texture2D(bumpMap, uv + vec2(0.0, texel)).r;
+      float hD = texture2D(bumpMap, uv - vec2(0.0, texel)).r;
+      float dx = hR - hL;
+      float dy = hU - hD;
+      vec3 axis = abs(n.y) > 0.92 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+      vec3 tangent = normalize(cross(axis, n));
+      vec3 bitangent = normalize(cross(n, tangent));
+      n = normalize(n - tangent * dx * 0.28 * landMask - bitangent * dy * 0.28 * landMask);
     }
     vec3 sun = normalize(sunDir);
     float ndl = dot(n, sun);
@@ -67,7 +73,7 @@ const EARTH_FRAG = `
     float ly = abs(fract(vUv.y * 9.0 + 0.5) - 0.5);
     float d = min(lx, ly);
     float aa = max(fwidth(d), 0.002);
-    float line = 1.0 - smoothstep(aa, aa * 2.4, d);
+    float line = 1.0 - smoothstep(0.0, aa, d);
     color = mix(color, vec3(0.78, 0.86, 0.82), line * uGraticule);
     gl_FragColor = vec4(color, 1.0);
   }
@@ -161,6 +167,13 @@ async function loadMap(url, anisotropy) {
 
 function nextFrame() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+function pause() {
+  return new Promise((resolve) => {
+    if (typeof requestIdleCallback === "function") requestIdleCallback(() => resolve(), { timeout: 120 });
+    else setTimeout(resolve, 120);
+  });
 }
 
 function ringLine(lat, lon, angular, segments, lift, color) {
@@ -286,34 +299,42 @@ export function createEarth(scene, renderer, { mobile, hiRes }) {
   let spin = 0;
   let cloudSpin = 0;
 
-  const ready = (async () => {
-    const dayName = hiRes ? "earth-day-4k.webp" : "earth-day-2k.webp";
-    const nightName = hiRes ? "earth-night-4k.webp" : "earth-night-2k.webp";
+  const dayName = hiRes ? "earth-day-4k.webp" : "earth-day-2k.webp";
+  const nightName = hiRes ? "earth-night-4k.webp" : "earth-night-2k.webp";
+  const ready = loadMap("/textures/" + dayName, anisotropy).then((tex) => {
+    uniforms.dayMap.value = tex;
+    uniforms.hasDay.value = 1;
+  });
+
+  function loadRest() {
     const queue = [
-      [dayName, "dayMap", "hasDay"],
       [nightName, "nightMap", "hasNight"],
-      ["earth-bump-2k.webp", "bumpMap", "hasBump"],
       ["earth-spec-2k.webp", "specMap", "hasSpec"],
+      ["earth-bump-2k.webp", "bumpMap", "hasBump"],
       ["earth-clouds-2k.webp", null, null],
     ];
-    for (const [file, key, flag] of queue) {
-      const tex = await loadMap("/textures/" + file, anisotropy);
-      if (key) {
-        uniforms[key].value = tex;
-        uniforms[flag].value = 1;
-      } else {
-        cloudUniforms.cloudMap.value = tex;
+    return (async () => {
+      for (const [file, key, flag] of queue) {
+        await pause();
+        await nextFrame();
+        const tex = await loadMap("/textures/" + file, anisotropy);
+        if (key) {
+          uniforms[key].value = tex;
+          uniforms[flag].value = 1;
+        } else {
+          cloudUniforms.cloudMap.value = tex;
+        }
+        await nextFrame();
       }
-      await nextFrame();
-    }
-  })();
+    })();
+  }
 
   function update(dt, camera, sun, focus, reduced) {
     uniforms.sunDir.value.copy(sun);
     const alt = camera.position.length();
     const near = 1 - smoothstep(1.22, 1.72, alt);
     uniforms.uDetail.value = near;
-    uniforms.uGraticule.value = smoothstep(2.15, 1.28, alt) * 0.28;
+    uniforms.uGraticule.value = smoothstep(2.15, 1.28, alt) * 0.09;
     const cloudGoal = (focus.cloud == null ? 1 : focus.cloud) * smoothstep(1.28, 1.9, alt);
     cloudUniforms.uOpacity.value = reduced ? cloudGoal : cloudUniforms.uOpacity.value + (cloudGoal - cloudUniforms.uOpacity.value) * (1 - Math.exp(-4 * dt));
     if (!reduced) {
@@ -334,7 +355,7 @@ export function createEarth(scene, renderer, { mobile, hiRes }) {
     if (weights.defense > 0.03 && focus.sat) overlays.updateLink(focus.sat);
   }
 
-  return { group, clouds, update, ready, weights };
+  return { group, clouds, update, ready, loadRest, weights };
 }
 
 function buildOverlays() {
@@ -354,6 +375,7 @@ function buildOverlays() {
       if (obj.material) {
         obj.material.transparent = true;
         obj.material.depthWrite = false;
+        if (obj.material.userData.baseOpacity == null) obj.material.userData.baseOpacity = obj.material.opacity;
         materials.push([id, obj.material]);
       }
     });
@@ -373,24 +395,16 @@ function buildOverlays() {
   add("defense", defense);
 
   const agriculture = new THREE.Group();
-  const parcelGeo = new THREE.PlaneGeometry(0.016, 0.012);
-  const parcelMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, side: THREE.DoubleSide });
-  const parcels = new THREE.InstancedMesh(parcelGeo, parcelMat, 48);
-  const dummy = new THREE.Object3D();
-  const palette = [0x6f4b2d, 0xa4833c, 0xc6b15a, 0x8eab52, 0x4f8a45, 0x1f5a38];
-  let n = 0;
-  for (let row = 0; row < 6; row += 1) {
-    for (let col = 0; col < 8; col += 1) {
-      surfacePoint(36.6, -119.7, (col - 3.5) * 0.009, (row - 2.5) * 0.007, 1.008, dummy.position);
-      dummy.lookAt(dummy.position.x * 2, dummy.position.y * 2, dummy.position.z * 2);
-      dummy.updateMatrix();
-      parcels.setMatrixAt(n, dummy.matrix);
-      parcels.setColorAt(n, new THREE.Color(palette[(row * 3 + col) % palette.length]));
-      n += 1;
-    }
-  }
-  parcels.instanceMatrix.needsUpdate = true;
-  if (parcels.instanceColor) parcels.instanceColor.needsUpdate = true;
+  const parcelMat = new THREE.MeshBasicMaterial({
+    map: ndviTexture(),
+    transparent: true,
+    opacity: 0.56,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  parcelMat.userData.baseOpacity = 0.56;
+  const parcels = new THREE.Mesh(curvedPatch(36.6, -119.7, 0.058, 32, 1.003), parcelMat);
+  parcels.renderOrder = 3;
   agriculture.add(parcels);
   add("agriculture", agriculture);
 
@@ -414,24 +428,41 @@ function buildOverlays() {
   add("construction", construction);
 
   const weather = new THREE.Group();
-  latLon(28, -68, 1.01, weather.position);
-  weather.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), weather.position.clone().normalize());
   const spin = new THREE.Group();
+  latLon(28, -68, 1.004, spin.position);
+  spin.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), spin.position.clone().normalize());
   weather.add(spin);
-  [0.04, 0.07, 0.1].forEach((radius, index) => {
+  [0.034, 0.058, 0.086].forEach((radius, index) => {
     const pts = [];
-    const turns = 5.2 + index;
-    for (let i = 0; i <= 80; i += 1) {
-      const a = (i / 80) * Math.PI * turns;
-      const rr = radius * (0.35 + 0.65 * (i / 80));
-      pts.push(new THREE.Vector3(Math.cos(a) * rr, 0.012, Math.sin(a) * rr));
+    const turns = 2.4 + index * 0.35;
+    for (let i = 0; i <= 360; i += 1) {
+      const a = (i / 360) * Math.PI * turns;
+      const rr = radius * (0.28 + 0.72 * (i / 360));
+      pts.push(new THREE.Vector3(Math.cos(a) * rr, 0.008, Math.sin(a) * rr));
     }
-    spin.add(new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(pts),
-      new THREE.LineBasicMaterial({ color: index === 2 ? 0xfff6ea : 0xf4efe4, transparent: true }),
-    ));
+    const lineMat = new THREE.LineBasicMaterial({
+      color: index === 2 ? 0xfff6ea : 0xf4efe4,
+      transparent: true,
+      opacity: 0.65,
+    });
+    lineMat.userData.baseOpacity = 0.65;
+    spin.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lineMat));
   });
-  spin.add(ringLocal(0.028, signal));
+  const eyeRing = ringLocal(0.02, signal);
+  eyeRing.material.opacity = 0.65;
+  eyeRing.material.userData.baseOpacity = 0.65;
+  spin.add(eyeRing);
+  const cloudMat = new THREE.MeshBasicMaterial({
+    map: cycloneTexture(),
+    transparent: true,
+    opacity: 0.8,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  cloudMat.userData.baseOpacity = 0.8;
+  const cloudPatch = new THREE.Mesh(curvedPatch(28, -68, 0.09, 36, 1.005), cloudMat);
+  cloudPatch.renderOrder = 2;
+  weather.add(cloudPatch);
   add("weather", weather);
 
   const energy = new THREE.Group();
@@ -511,11 +542,123 @@ function buildOverlays() {
 
   function setOpacity(id, value) {
     materials.forEach(([key, mat]) => {
-      if (key === id) mat.opacity = value;
+      if (key === id) mat.opacity = (mat.userData.baseOpacity == null ? 1 : mat.userData.baseOpacity) * value;
     });
   }
 
   return { root, nodes, spin, tickMaritime, updateLink, setOpacity };
+}
+
+function curvedPatch(lat, lon, radius, segments, lift) {
+  const center = new THREE.Vector3();
+  latLon(lat, lon, 1, center);
+  const n = center.clone().normalize();
+  const east = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), n);
+  if (east.lengthSq() < 1e-8) east.set(1, 0, 0);
+  east.normalize();
+  const north = new THREE.Vector3().crossVectors(n, east).normalize();
+  const geo = new THREE.PlaneGeometry(radius * 2, radius * 2, segments, segments);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i += 1) {
+    const p = n.clone()
+      .addScaledVector(east, pos.getX(i))
+      .addScaledVector(north, pos.getY(i))
+      .normalize()
+      .multiplyScalar(lift);
+    pos.setXYZ(i, p.x, p.y, p.z);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function canvasTexture(draw) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 512;
+  draw(canvas.getContext("2d"), 512);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function ndviTexture() {
+  return canvasTexture((g, s) => {
+    g.clearRect(0, 0, s, s);
+    const bands = ["#6b4423", "#b08948", "#d2c078", "#9bb85a", "#4f8a45", "#1d5c3a", "#8e6a32"];
+    const cols = 11;
+    const rows = 9;
+    const pad = 18;
+    const cw = (s - pad * 2) / cols;
+    const rh = (s - pad * 2) / rows;
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        g.globalAlpha = 0.78;
+        g.fillStyle = bands[(row * 3 + col) % bands.length];
+        g.fillRect(pad + col * cw + 1.5, pad + row * rh + 1.5, cw - 3, rh - 3);
+      }
+    }
+    g.globalAlpha = 1;
+    g.strokeStyle = "rgba(244, 240, 232, 0.9)";
+    g.lineWidth = 1.4;
+    for (let col = 0; col <= cols; col += 1) {
+      const x = pad + col * cw;
+      g.beginPath();
+      g.moveTo(x, pad);
+      g.lineTo(x, s - pad);
+      g.stroke();
+    }
+    for (let row = 0; row <= rows; row += 1) {
+      const y = pad + row * rh;
+      g.beginPath();
+      g.moveTo(pad, y);
+      g.lineTo(s - pad, y);
+      g.stroke();
+    }
+    g.lineWidth = 1.6;
+    [[150, 168, 46], [310, 250, 58], [220, 390, 40], [400, 150, 34]].forEach(([x, y, r]) => {
+      g.beginPath();
+      g.arc(x, y, r, 0, Math.PI * 2);
+      g.stroke();
+      g.beginPath();
+      g.arc(x, y, 2.2, 0, Math.PI * 2);
+      g.fillStyle = "rgba(244, 240, 232, 0.95)";
+      g.fill();
+    });
+  });
+}
+
+function cycloneTexture() {
+  return canvasTexture((g, s) => {
+    g.clearRect(0, 0, s, s);
+    const cx = s * 0.5;
+    const cy = s * 0.5;
+    for (let i = 6; i >= 1; i -= 1) {
+      const radius = 28 + i * 34;
+      g.beginPath();
+      g.arc(cx, cy, radius, 0, Math.PI * 2);
+      g.strokeStyle = "rgba(244, 246, 248, " + (0.08 + i * 0.035) + ")";
+      g.lineWidth = 18 - i;
+      g.stroke();
+    }
+    g.lineWidth = 2;
+    g.strokeStyle = "rgba(255, 246, 234, 0.55)";
+    g.beginPath();
+    for (let i = 0; i <= 420; i += 1) {
+      const a = (i / 420) * Math.PI * 5.2;
+      const rr = 16 + (i / 420) * 200;
+      const x = cx + Math.cos(a) * rr;
+      const y = cy + Math.sin(a) * rr;
+      if (i === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.stroke();
+    g.fillStyle = "rgba(216, 106, 58, 0.85)";
+    g.beginPath();
+    g.arc(cx, cy, 7, 0, Math.PI * 2);
+    g.fill();
+  });
 }
 
 function ringLocal(radius, color) {
