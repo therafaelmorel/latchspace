@@ -586,45 +586,51 @@ function canvasTexture(draw) {
 function ndviTexture() {
   return canvasTexture((g, s) => {
     g.clearRect(0, 0, s, s);
-    const bands = ["#6b4423", "#b08948", "#d2c078", "#9bb85a", "#4f8a45", "#1d5c3a", "#8e6a32"];
-    const cols = 11;
-    const rows = 9;
-    const pad = 18;
-    const cw = (s - pad * 2) / cols;
-    const rh = (s - pad * 2) / rows;
-    for (let row = 0; row < rows; row += 1) {
-      for (let col = 0; col < cols; col += 1) {
-        g.globalAlpha = 0.78;
-        g.fillStyle = bands[(row * 3 + col) % bands.length];
-        g.fillRect(pad + col * cw + 1.5, pad + row * rh + 1.5, cw - 3, rh - 3);
+    const bands = ["#6d5a3e", "#8a7348", "#7d8a52", "#5f7a48", "#6a6844", "#4f6846", "#8d7a58"];
+    const pad = 22;
+    const rows = [];
+    let y = pad;
+    let row = 0;
+    while (y < s - pad - 8) {
+      const rh = 34 + ((row * 17 + 5) % 28);
+      rows.push([y, Math.min(rh, s - pad - y)]);
+      y += rh;
+      row += 1;
+    }
+    rows.forEach(([top, rh], rIndex) => {
+      let x = pad;
+      let col = 0;
+      while (x < s - pad - 8) {
+        const cw = 32 + ((rIndex * 11 + col * 19) % 36);
+        const w = Math.min(cw, s - pad - x);
+        g.globalAlpha = 0.38;
+        g.fillStyle = bands[(rIndex * 2 + col) % bands.length];
+        g.fillRect(x, top, w, rh);
+        x += cw;
+        col += 1;
       }
-    }
-    g.globalAlpha = 1;
-    g.strokeStyle = "rgba(244, 240, 232, 0.9)";
-    g.lineWidth = 1.4;
-    for (let col = 0; col <= cols; col += 1) {
-      const x = pad + col * cw;
+    });
+    g.globalAlpha = 0.45;
+    g.strokeStyle = "rgba(232, 226, 214, 0.4)";
+    g.lineWidth = 0.7;
+    rows.forEach(([top, rh], rIndex) => {
+      g.strokeRect(pad, top, s - pad * 2, rh);
+      let x = pad;
+      let col = 0;
+      while (x < s - pad) {
+        g.beginPath();
+        g.moveTo(x, top);
+        g.lineTo(x, top + rh);
+        g.stroke();
+        x += 32 + ((rIndex * 11 + col * 19) % 36);
+        col += 1;
+      }
+    });
+    g.lineWidth = 0.8;
+    [[170, 200, 22], [348, 270, 26], [240, 410, 18]].forEach(([cx, cy, r]) => {
       g.beginPath();
-      g.moveTo(x, pad);
-      g.lineTo(x, s - pad);
+      g.arc(cx, cy, r, 0, Math.PI * 2);
       g.stroke();
-    }
-    for (let row = 0; row <= rows; row += 1) {
-      const y = pad + row * rh;
-      g.beginPath();
-      g.moveTo(pad, y);
-      g.lineTo(s - pad, y);
-      g.stroke();
-    }
-    g.lineWidth = 1.6;
-    [[150, 168, 46], [310, 250, 58], [220, 390, 40], [400, 150, 34]].forEach(([x, y, r]) => {
-      g.beginPath();
-      g.arc(x, y, r, 0, Math.PI * 2);
-      g.stroke();
-      g.beginPath();
-      g.arc(x, y, 2.2, 0, Math.PI * 2);
-      g.fillStyle = "rgba(244, 240, 232, 0.95)";
-      g.fill();
     });
   });
 }

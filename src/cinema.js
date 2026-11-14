@@ -15,7 +15,7 @@ const INDUSTRY = {
 };
 const TOUR = {
   optics: { relative: true, eye: [0.7, 0.18, 0.42], pins: [["optics", "Multispectral telescope"]] },
-  comms: { relative: true, eye: [0.7, 0.1, 0.14], pins: [["comms", "Laser-com terminal"], ["array", "Ka/X-band array"]] },
+  comms: { relative: true, eye: [1.85, 0.48, 0.85], pins: [["comms", "Laser-com terminal"], ["array", "Ka/X-band array"]] },
   solar: { relative: true, eye: [-0.55, 0.72, 1.45], pins: [["solar", "Solar wing"], ["mli", "Kapton MLI"]] },
   propulsion: { eye: [1.15, 0.48, -1.85], look: [0.05, 0.08, -0.62], pins: [["thruster", "Hall thruster"], ["tracker", "Star tracker"]] },
 };
@@ -361,7 +361,8 @@ export function createCinema(canvas, { onRestored }) {
   let kicked = false;
 
   function tourVectors(spec, outEye, outLook) {
-    const anchor = spec.relative ? craft.anchors[spec.pins[0][0]] : null;
+    const anchorName = spec.relative && spec.pins && spec.pins[0] ? spec.pins[0][0] : "";
+    const anchor = anchorName ? craft.anchors[anchorName] : null;
     if (anchor) {
       anchor.getWorldPosition(outLook);
       craft.group.worldToLocal(outLook);
@@ -371,7 +372,8 @@ export function createCinema(canvas, { onRestored }) {
       return;
     }
     outEye.set(spec.eye[0], spec.eye[1], spec.eye[2]).applyMatrix4(craft.group.matrixWorld);
-    outLook.set(spec.look[0], spec.look[1], spec.look[2]).applyMatrix4(craft.group.matrixWorld);
+    if (spec.look) outLook.set(spec.look[0], spec.look[1], spec.look[2]).applyMatrix4(craft.group.matrixWorld);
+    else outLook.copy(outEye);
   }
 
   function resize() {

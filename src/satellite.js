@@ -427,22 +427,38 @@ function findNozzle(object) {
     cx /= cluster.length;
     cy /= cluster.length;
     cz /= cluster.length;
-    let maxR = 0;
+    const face = [];
     cluster.forEach((i) => {
+      const depth = max - (samples[i] * axis[0] + samples[i + 1] * axis[1] + samples[i + 2] * axis[2]);
+      if (depth <= 0.014) face.push(i);
+    });
+    if (face.length < 4) return;
+    cx = 0;
+    cy = 0;
+    cz = 0;
+    face.forEach((i) => {
+      cx += samples[i];
+      cy += samples[i + 1];
+      cz += samples[i + 2];
+    });
+    cx /= face.length;
+    cy /= face.length;
+    cz /= face.length;
+    let inner = 0;
+    face.forEach((i) => {
       const dx = samples[i] - cx;
       const dy = samples[i + 1] - cy;
       const dz = samples[i + 2] - cz;
-      maxR = Math.max(maxR, Math.hypot(dx, dy, dz));
+      inner = Math.max(inner, Math.hypot(dx, dy, dz));
     });
-    // A nozzle cap is a compact disk on a protruding tip, not a broad body face.
-    if (maxR < 0.05 || maxR > 0.3) return;
-    let score = max - maxR * 0.4;
+    if (inner < 0.04 || inner > 0.28) return;
+    let score = max - inner * 0.35;
     if (axis[2] === 1) score += 1.4;
     if (!best || score > best.score) {
       best = {
         dir: new THREE.Vector3(axis[0], axis[1], axis[2]),
         center: new THREE.Vector3(cx, cy, cz),
-        radius: maxR,
+        radius: inner,
         score,
       };
     }
@@ -459,21 +475,28 @@ function findNozzle(object) {
 }
 
 function seatEmitter(parent, barrel, lensMat) {
-  const shroudMat = new THREE.MeshStandardMaterial({ color: 0x14171b, metalness: 0.78, roughness: 0.34 });
-  const theta = 0.92;
-  const radius = barrel.radius / Math.sin(theta);
+  const shroudMat = new THREE.MeshStandardMaterial({ color: 0x121418, metalness: 0.72, roughness: 0.38 });
+  const opening = barrel.radius;
+  const aperture = opening * 1.18;
+  const depth = Math.max(0.012, aperture * 0.16);
+  const outward = barrel.dir.clone().normalize();
+  const align = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), outward);
+  const glass = lensMat.clone();
+  glass.polygonOffset = true;
+  glass.polygonOffsetFactor = -4;
+  glass.polygonOffsetUnits = -4;
+  const lens = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 40, 16, 0, Math.PI * 2, 0, Math.PI / 2),
+    glass,
+  );
+  lens.scale.set(aperture, depth, aperture);
+  lens.quaternion.copy(align);
+  lens.position.copy(barrel.center).addScaledVector(outward, 0.006 - depth);
   const shroud = new THREE.Mesh(
-    new THREE.CylinderGeometry(barrel.radius * 0.84, barrel.radius * 0.92, barrel.radius * 0.36, 36, 1, true),
+    new THREE.CylinderGeometry(aperture * 0.98, aperture * 1.04, depth * 1.6, 32, 1, true),
     shroudMat,
   );
-  const lens = new THREE.Mesh(
-    new THREE.SphereGeometry(radius, 40, 20, 0, Math.PI * 2, 0, theta),
-    lensMat,
-  );
-  const outward = barrel.dir.clone().normalize();
-  shroud.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), outward);
-  lens.quaternion.copy(shroud.quaternion);
-  shroud.position.copy(barrel.center).addScaledVector(outward, -barrel.radius * 0.16);
-  lens.position.copy(barrel.center).addScaledVector(outward, -radius * Math.cos(theta));
+  shroud.quaternion.copy(align);
+  shroud.position.copy(barrel.center).addScaledVector(outward, -depth * 0.85);
   parent.add(shroud, lens);
 }
