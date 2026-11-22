@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LATCH SPACE — Orbit as instrument</title>
+  <meta name="description" content="LATCH SPACE provides dedicated satellites and shared constellation capacity for defense, agriculture, construction, weather, energy, and maritime work. Service coming summer 2027.">
+  <meta name="theme-color" content="#07080a">
+  <meta name="color-scheme" content="dark">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="https://latchspace.pages.dev/">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta property="og:title" content="LATCH SPACE">
+  <meta property="og:description" content="Dedicated satellites and shared constellation capacity. Service coming summer 2027.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://latchspace.pages.dev/">
+  <meta property="og:image" content="https://latchspace.pages.dev/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="LATCH SPACE. Orbit as instrument. Service coming summer 2027.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="LATCH SPACE">
+  <meta name="twitter:description" content="Dedicated satellites and shared constellation capacity. Service coming summer 2027.">
+  <meta name="twitter:image" content="https://latchspace.pages.dev/og.png">
+  <meta name="twitter:image:alt" content="LATCH SPACE. Orbit as instrument. Service coming summer 2027.">
+  <link rel="stylesheet" href="/src/style.css">
+  <style>html,body{background:#07080a;color:#e6e0d4;margin:0}</style>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "LATCH SPACE",
+    "email": "hello@latchdesignstudio.com",
+    "description": "LATCH SPACE provides dedicated satellites and shared constellation capacity. Service coming summer 2027.",
+    "parentOrganization": { "@type": "Organization", "name": "LATCH STUDIO" }
+  }
+  </script>
+</head>
+<body id="top">
+  <a class="skip" href="#content">Skip to content</a>
+  <div class="globe-fallback" aria-hidden="true"></div>
+  <canvas id="earth" aria-hidden="true"></canvas>
+  <header class="site-header">
+    <a class="brand" href="#top">LATCH SPACE</a>
+    <div class="readout">
+      <div class="readout-item">
+        <span class="readout-k">UTC</span>
+        <time id="utc" datetime="">00:00:00</time>
+      </div>
+      <div class="readout-item">
+        <span class="readout-k">Model 51.6°</span>
+        <span id="orbit-read">00.0° N  000.0° W</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button type="button" class="text-btn" id="index-btn" aria-expanded="false" aria-controls="index-panel">Index</button>
+      <a class="header-cta magnetic" href="mailto:hello@latchdesignstudio.com?subject=LATCH%20SPACE%20mission%20briefing">Briefing</a>
+    </div>
+  </header>
+  <div id="index-panel" class="index-panel" hidden>
+    <nav aria-label="Index">
+      <a href="#capability"><span>01</span> Capability</a>
+      <a href="#industries"><span>02</span> Industries</a>
+      <a href="#spacecraft"><span>03</span> Spacecraft</a>
+      <a href="#console"><span>04</span> Console</a>
+      <a href="#method"><span>05</span> Method</a>
+      <a href="#security"><span>06</span> Security</a>
+      <a href="#briefing"><span>07</span> Briefing</a>
+    </nav>
+  </div>
+  <nav class="folio" aria-label="Section index">
+    <a href="#capability" data-folio="capability">01</a>
+    <a href="#industries" data-folio="industries">02</a>
+    <a href="#spacecraft" data-folio="spacecraft">03</a>
+    <a href="#console" data-folio="console">04</a>
+    <a href="#method" data-folio="method">05</a>
+    <a href="#security" data-folio="security">06</a>
+    <a href="#briefing" data-folio="briefing">07</a>
+  </nav>
+  <nav class="rail" aria-label="Industries">
+    <a href="#ch-defense">Defense</a>
+    <a href="#ch-agriculture">Agriculture</a>
+    <a href="#ch-construction">Construction</a>
+    <a href="#ch-weather">Weather</a>
+    <a href="#ch-energy">Energy</a>
+    <a href="#ch-maritime">Maritime</a>
+  </nav>
+  <div id="callouts" class="callouts" hidden>
+    <svg aria-hidden="true">
+      <line data-pin-line="0"></line>
+      <line data-pin-line="1"></line>
+      <circle data-pin-dot="0" r="2.5"></circle>
+      <circle data-pin-dot="1" r="2.5"></circle>
+    </svg>
+    <p class="pin-label" data-pin-label="0"></p>
+    <p class="pin-label" data-pin-label="1"></p>
+  </div>
+  <main id="content">
+    <section id="hero" class="stage" data-scene="on" data-section="hero" data-beat="hero">
+      <div class="stage-copy">
+        <h1 class="hero-title">
+          <span class="eyebrow brand">LATCH SPACE</span>
+          <span class="display">Orbit<br>as instrument.</span>
+        </h1>
+        <p class="milestone">Service coming summer 2027</p>
+        <p class="deck">Dedicated satellites, and capacity on a shared constellation, for organizations whose work depends on a view from above.</p>
+        <p class="industry-line">Defense · Agriculture · Construction · Weather · Energy · Maritime</p>
+        <ul class="legend">
+          <li><span class="key"></span> LEO</li>
+          <li><span class="key"></span> Sun-synchronous</li>
+          <li><span class="key key-dim"></span> GEO</li>
+        </ul>
+        <p class="fine">LEO and sun-synchronous radii are drawn to scale with the Earth. The GEO ring is drawn closer than its true altitude so it fits the frame.</p>
+        <noscript><p class="fine">The globe is drawn with WebGL. The rest of this page is readable without it.</p></noscript>
+      </div>
+    </section>
+
+    <section id="capability" class="stage" data-scene="on" data-section="capability" data-beat="capability" aria-labelledby="capability-title">
+      <div class="stage-copy">
+        <p class="kicker">01 — Capability</p>
+        <h2 id="capability-title">Three ways to put an instrument on orbit.</h2>
+        <p class="lede">The work decides the spacecraft. Sometimes that is a satellite of your own. Sometimes it is a pass on a shared constellation, tasked for the place and the hour you name.</p>
+        <div class="cap-list">
+          <article>
+            <h3><span>01</span> Dedicated satellites</h3>
+            <p>A spacecraft specified around one mission. Orbit, sensor, duty cycle, and the ground segment that flies it.</p>
+          </article>
+          <article>
+            <h3><span>02</span> Shared capacity</h3>
+            <p>Time on a shared constellation when a dedicated spacecraft is more than the work requires. You task the pass. The product comes back to you.</p>
+          </article>
+          <article>
+            <h3><span>03</span> Data and tasking</h3>
+            <p>Ask for a collect over a place and a window. Designed for rapid-revisit tasking when the orbit is chosen for your cadence.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="industries" data-section="industries" aria-labelledby="industries-title">
+      <article id="ch-defense" class="stage" data-beat="defense">
+        <div class="stage-copy">
+          <p class="kicker">02 — Industries · 01 Defense</p>
+          <h2 id="industries-title">What the orbit is asked to see.</h2>
+          <p class="where">Strait of Gibraltar · Illustrative</p>
+          <h3>A tasking relationship you control.</h3>
+          <p>Dedicated spacecraft and reserved capacity for organizations that need a look, or a link, on their own timeline. Who can task, who can see the product, and how long it is kept are written into the engagement. Ask us what we can support. We do not advertise authorizations we do not hold.</p>
+          <p class="fine">The marks on the Earth are drawings of a product, not collects.</p>
+        </div>
+      </article>
+      <article id="ch-agriculture" class="stage" data-beat="agriculture">
+        <div class="stage-copy">
+          <p class="kicker">02 — Agriculture</p>
+          <p class="where">San Joaquin · Illustrative</p>
+          <h3>Crop condition, on a repeat cycle.</h3>
+          <p>Fields change faster than a seasonal snapshot. A mission can be built to revisit on the cadence of irrigation, stress, and harvest, and to task the passes that matter that week.</p>
+        </div>
+      </article>
+      <article id="ch-construction" class="stage" data-beat="construction">
+        <div class="stage-copy">
+          <p class="kicker">03 — Construction</p>
+          <p class="where">Coastal corridor · Illustrative</p>
+          <h3>What changed since the last pass.</h3>
+          <p>Corridors, sites, and civil works, compared across collects. The value is the difference: what is new, what moved, what was not there last time. Cadence follows the schedule of the work.</p>
+        </div>
+      </article>
+      <article id="ch-weather" class="stage" data-beat="weather">
+        <div class="stage-copy">
+          <p class="kicker">04 — Weather</p>
+          <p class="where">Atlantic basin · Illustrative</p>
+          <h3>The system, from above the system.</h3>
+          <p>Wide looks for organizations that forecast, warn, and route around weather. The orbit and the sensor are chosen for the phenomenon you watch. The drawing is not a forecast.</p>
+        </div>
+      </article>
+      <article id="ch-energy" class="stage" data-beat="energy">
+        <div class="stage-copy">
+          <p class="kicker">05 — Energy</p>
+          <p class="where">Permian corridor · Illustrative</p>
+          <h3>Corridors, plants, and the ground between.</h3>
+          <p>Linear infrastructure is costly to patrol and practical to task from orbit. A standing cadence, plus a way to ask for a look when a span needs one.</p>
+        </div>
+      </article>
+      <article id="ch-maritime" class="stage" data-beat="maritime">
+        <div class="stage-copy">
+          <p class="kicker">06 — Maritime</p>
+          <p class="where">Strait of Malacca · Illustrative</p>
+          <h3>Sea lanes, and the vessels in them.</h3>
+          <p>Coastal and open-water awareness for people who move goods and people. Shared capacity when you need a look. A dedicated spacecraft when the route is the mission.</p>
+        </div>
+      </article>
+    </section>
+
+    <section id="spacecraft" data-section="spacecraft" aria-labelledby="craft-title">
+      <article id="sat-optics" class="stage" data-beat="optics">
+        <div class="stage-copy">
+          <p class="kicker">03 — Spacecraft · 01</p>
+          <h2 id="craft-title">The instrument, up close.</h2>
+          <h3>Multispectral optical payload</h3>
+          <p>A recessed telescope in the bus face: carbon baffle, sapphire elements, and the mirror cell behind them. The bands are chosen for the work.</p>
+        </div>
+      </article>
+      <article id="sat-comms" class="stage" data-beat="comms">
+        <div class="stage-copy">
+          <p class="kicker">03 — Spacecraft · 02</p>
+          <h3>Optical laser-com and phased array</h3>
+          <p>A gimbaled optical terminal for the link, and a Ka/X-band array on the nadir face for the pass. The path down is part of the design.</p>
+        </div>
+      </article>
+      <article id="sat-solar" class="stage" data-beat="solar">
+        <div class="stage-copy">
+          <p class="kicker">03 — Spacecraft · 03</p>
+          <h3>Solar arrays and Kapton thermal architecture</h3>
+          <p>Three-panel wings, a deployment yoke, gold Kapton blankets, and radiator louvers. Power and heat, sized for the duty cycle.</p>
+        </div>
+      </article>
+      <article id="sat-propulsion" class="stage" data-beat="propulsion">
+        <div class="stage-copy">
+          <p class="kicker">03 — Spacecraft · 04</p>
+          <h3>Precision ADCS and Hall-effect propulsion</h3>
+          <p>Star trackers for attitude, and a Hall-effect xenon thruster for the orbit the mission has to hold.</p>
+        </div>
+      </article>
+    </section>
+
+    <section id="console" class="stage" data-scene="on" data-section="console" data-beat="console" aria-labelledby="console-title">
+      <div class="stage-copy console-copy">
+        <p class="kicker">04 — Platform</p>
+        <h2 id="console-title">Tasking, without the theater.</h2>
+        <p>A console for the people who ask for a collect and use what comes back. The panel is a sample of the grain of the tool. It is not a live system, and the figures are not a specification.</p>
+        <div class="console">
+          <div class="console-bar">
+            <span>Tasking console</span>
+            <span>Sample scenario · Illustrative · Service coming summer 2027</span>
+          </div>
+          <div class="console-live">
+            <span>Your clock</span>
+            <time id="utc-console">00:00:00 UTC</time>
+          </div>
+          <dl class="console-fields">
+            <div><dt>Area</dt><dd>12 km window</dd></div>
+            <div><dt>Latitude</dt><dd>34.052° N</dd></div>
+            <div><dt>Longitude</dt><dd>118.244° W</dd></div>
+            <div><dt>Sensor</dt><dd>Panchromatic and multispectral</dd></div>
+            <div><dt>Mode</dt><dd>Strip</dd></div>
+            <div><dt>Off-nadir</dt><dd id="off-read">18.4°</dd></div>
+            <div><dt>Window</dt><dd>14:22:06 to 14:27:41 UTC</dd></div>
+          </dl>
+          <div class="passes" role="group" aria-label="Passes in the sample">
+            <button type="button" class="pass is-selected" data-off="18.4" aria-pressed="true">Ascending LEO 18.4° <span>Open</span></button>
+            <button type="button" class="pass" data-off="31.0" aria-pressed="false">Descending SSO 31.0° <span>Open</span></button>
+            <button type="button" class="pass" data-off="9.2" aria-pressed="false">Ascending LEO 9.2° <span>Held</span></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="method" class="stage" data-scene="on" data-section="method" data-beat="method" aria-labelledby="method-title">
+      <div class="stage-copy">
+        <p class="kicker">05 — Method</p>
+        <h2 id="method-title">From a blank sheet to a spacecraft in use.</h2>
+        <p class="lede">Missions are shaped around the orbit the work needs: low Earth, sun-synchronous, or geostationary.</p>
+        <ol class="phases">
+          <li><span>01</span> Concept</li>
+          <li><span>02</span> Design</li>
+          <li><span>03</span> Build</li>
+          <li><span>04</span> Launch</li>
+          <li><span>05</span> Checkout</li>
+          <li><span>06</span> Operations</li>
+        </ol>
+        <p class="fine">A typical sequence, not a schedule, and not a promise of duration.</p>
+      </div>
+    </section>
+
+    <section id="security" class="stage" data-scene="on" data-section="security" data-beat="security" aria-labelledby="security-title">
+      <div class="stage-copy">
+        <p class="kicker">06 — Security</p>
+        <h2 id="security-title">Commitments, not badges.</h2>
+        <ul class="commitments">
+          <li>
+            <h3>Encryption</h3>
+            <p>Mission data is encrypted in transit and at rest.</p>
+          </li>
+          <li>
+            <h3>Access</h3>
+            <p>Only the people on that mission can task it or read its products.</p>
+          </li>
+          <li>
+            <h3>Separation</h3>
+            <p>One customer's tasking and products are kept apart from another's.</p>
+          </li>
+          <li>
+            <h3>Terms, in writing</h3>
+            <p>Retention, residency, and where the system runs are agreed before a contract, and written into it.</p>
+          </li>
+        </ul>
+        <p class="security-close">These are commitments. This page is not a certification, an authorization, or an audit report.</p>
+      </div>
+    </section>
+
+    <section id="briefing" class="stage stage-brief" data-scene="on" data-section="briefing" data-beat="briefing" aria-labelledby="briefing-title">
+      <div class="stage-copy">
+        <p class="kicker">07 — Briefing</p>
+        <p class="milestone">Service coming summer 2027</p>
+        <p>Tell us the work, the place, and the cadence you have in mind. We will reply with a briefing.</p>
+        <h2 id="briefing-title">
+          <a class="briefing-link magnetic" href="mailto:hello@latchdesignstudio.com?subject=LATCH%20SPACE%20mission%20briefing">Request a mission briefing</a>
+        </h2>
+        <a class="mail" href="mailto:hello@latchdesignstudio.com">hello@latchdesignstudio.com</a>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">
+    <div class="footer-brand brand">LATCH SPACE</div>
+    <p class="footer-line">A <span class="brand">LATCH STUDIO</span> company</p>
+    <nav class="footer-nav" aria-label="Footer">
+      <a href="#capability">Capability</a>
+      <a href="#industries">Industries</a>
+      <a href="#spacecraft">Spacecraft</a>
+      <a href="#console">Console</a>
+      <a href="#method">Method</a>
+      <a href="#security">Security</a>
+      <a href="#briefing">Briefing</a>
+    </nav>
+    <p class="legal">© 2026 <span class="brand">LATCH SPACE</span></p>
+  </footer>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
