@@ -42,8 +42,9 @@ const EARTH_FRAG = `
     float land = smoothstep(0.18, 0.42, day.g - day.b * 0.35);
     day = mix(day, vec3(0.035, 0.11, 0.22), (1.0 - land) * (1.0 - hasDay));
     vec3 night = texture2D(nightMap, uv).rgb * hasNight;
-    float specMask = mix(1.0 - land, texture2D(specMap, uv).r, hasSpec);
-    float landMask = hasSpec > 0.5 ? (1.0 - texture2D(specMap, uv).r) : land;
+    float specTex = texture2D(specMap, uv).r;
+    float specMask = mix(1.0 - land, specTex, hasSpec);
+    float landMask = hasSpec > 0.5 ? (1.0 - specTex) : land;
     if (hasBump > 0.5 && landMask > 0.02) {
       float texel = 0.00115;
       float hR = texture2D(bumpMap, uv + vec2(texel, 0.0)).r;
@@ -110,13 +111,14 @@ const ATMO_VERT = `
 
 const ATMO_FRAG = `
   uniform vec3 sunDir;
+  uniform float uGlow;
   varying vec3 vNormal;
   varying vec3 vWorld;
   void main() {
     float fres = pow(0.68 - dot(normalize(vNormal), vec3(0.0, 0.0, 1.0)), 3.4);
     float sun = pow(max(dot(normalize(vWorld), normalize(sunDir)), 0.0), 2.2);
     vec3 col = mix(vec3(0.28, 0.52, 0.98), vec3(1.0, 0.74, 0.46), sun);
-    gl_FragColor = vec4(col, clamp(fres, 0.0, 1.0) * 0.95);
+    gl_FragColor = vec4(col, clamp(fres, 0.0, 1.0) * 0.95 * uGlow);
   }
 `;
 
@@ -163,6 +165,25 @@ async function loadMap(url, anisotropy) {
   tex.generateMipmaps = true;
   tex.needsUpdate = true;
   return tex;
+}
+
+let lastScroll = 0;
+if (typeof window !== "undefined") {
+  window.addEventListener("scroll", () => { lastScroll = performance.now(); }, { passive: true });
+}
+
+// Wait until the reader has stopped scrolling for a moment, so GPU uploads and
+// mipmap generation never land in the middle of a zone transition.
+function quiet(ms = 320, cap = 5000) {
+  const start = performance.now();
+  return new Promise((resolve) => {
+    const check = () => {
+      const now = performance.now();
+      if (now - lastScroll >= ms || now - start >= cap) resolve();
+      else setTimeout(check, 90);
+    };
+    check();
+  });
 }
 
 function nextFrame() {
@@ -230,7 +251,9 @@ export function createEarth(scene, renderer, { mobile, hiRes }) {
   group.name = "earth";
   scene.add(group);
 
-  const anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  // Zone shots look straight down, so 4x anisotropic filtering is visually identical to 8x
+  // and saves texture bandwidth on the full-screen globe.
+  const anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
   const segs = mobile ? [48, 32] : [96, 64];
   const uniforms = {
     dayMap: { value: placeholder(12, 40, 72) },
@@ -279,7 +302,7 @@ export function createEarth(scene, renderer, { mobile, hiRes }) {
   const atmo = new THREE.Mesh(
     new THREE.SphereGeometry(1.055, segs[0], segs[1]),
     new THREE.ShaderMaterial({
-      uniforms: { sunDir: uniforms.sunDir },
+      uniforms: { sunDir: uniforms.sunDir, uGlow: { value: 1 } },
       vertexShader: ATMO_VERT,
       fragmentShader: ATMO_FRAG,
       side: THREE.BackSide,
@@ -292,7 +315,7 @@ export function createEarth(scene, renderer, { mobile, hiRes }) {
   atmo.renderOrder = 3;
   group.add(atmo);
 
-  const overlays = buildOverlays();
+  const overlays = buildOverlays(uniforms);
   group.add(overlays.root);
 
   const weights = Object.fromEntries(INDUSTRIES.map((id) => [id, 0]));
@@ -302,6 +325,7 @@ export function createEarth(scene, renderer, { mobile, hiRes }) {
   const dayName = hiRes ? "earth-day-4k.webp" : "earth-day-2k.webp";
   const nightName = hiRes ? "earth-night-4k.webp" : "earth-night-2k.webp";
   const ready = loadMap("/textures/" + dayName, anisotropy).then((tex) => {
+    renderer.initTexture(tex);
     uniforms.dayMap.value = tex;
     uniforms.hasDay.value = 1;
   });
@@ -318,6 +342,10 @@ export function createEarth(scene, renderer, { mobile, hiRes }) {
         await pause();
         await nextFrame();
         const tex = await loadMap("/textures/" + file, anisotropy);
+        await quiet();
+        await nextFrame();
+        // Upload now, between frames, instead of on whichever frame first samples it.
+        renderer.initTexture(tex);
         if (key) {
           uniforms[key].value = tex;
           uniforms[flag].value = 1;
@@ -329,9 +357,20 @@ export function createEarth(scene, renderer, { mobile, hiRes }) {
     })();
   }
 
+  const toCenter = new THREE.Vector3();
+  const forward = new THREE.Vector3();
   function update(dt, camera, sun, focus, reduced) {
     uniforms.sunDir.value.copy(sun);
     const alt = camera.position.length();
+    // Close to the globe the limb glow reads as a hard blue band, so soften it.
+    atmo.material.uniforms.uGlow.value = 0.06 + 0.94 * smoothstep(1.85, 2.7, alt);
+    // When the globe fills the whole frame the limb is off screen; skip the shell.
+    camera.getWorldDirection(forward);
+    toCenter.copy(camera.position).multiplyScalar(-1).normalize();
+    const offAxis = Math.acos(Math.max(-1, Math.min(1, forward.dot(toCenter))));
+    const horizon = Math.asin(Math.min(1, 1.06 / Math.max(alt, 1.0601)));
+    const halfDiag = Math.atan(Math.tan(camera.fov * DEG * 0.5) * Math.hypot(1, camera.aspect || 1));
+    atmo.visible = offAxis + halfDiag + 0.02 >= horizon;
     const near = 1 - smoothstep(1.22, 1.72, alt);
     uniforms.uDetail.value = near;
     uniforms.uGraticule.value = smoothstep(2.15, 1.28, alt) * 0.09;
@@ -343,6 +382,8 @@ export function createEarth(scene, renderer, { mobile, hiRes }) {
       if (weights.weather > 0.05) spin += dt * 0.28;
       if (weights.maritime > 0.05) overlays.tickMaritime(dt);
     }
+    // Zone close-ups fade clouds to ~0; don't pay for an invisible full-screen pass.
+    clouds.visible = cloudUniforms.uOpacity.value > 0.008;
     overlays.spin.rotation.y = spin;
     const active = focus.industry || "";
     INDUSTRIES.forEach((id) => {
@@ -355,10 +396,10 @@ export function createEarth(scene, renderer, { mobile, hiRes }) {
     if (weights.defense > 0.03 && focus.sat) overlays.updateLink(focus.sat);
   }
 
-  return { group, clouds, update, ready, loadRest, weights };
+  return { group, clouds, atmo, overlays, update, ready, loadRest, weights };
 }
 
-function buildOverlays() {
+function buildOverlays(earthUniforms) {
   const root = new THREE.Group();
   root.name = "telemetry";
   const nodes = {};
@@ -403,6 +444,7 @@ function buildOverlays() {
     toneMapped: false,
   });
   parcelMat.userData.baseOpacity = 0.56;
+  maskToLand(parcelMat, earthUniforms);
   const parcels = new THREE.Mesh(curvedPatch(36.6, -119.7, 0.058, 32, 1.003), parcelMat);
   parcels.renderOrder = 3;
   agriculture.add(parcels);
@@ -546,7 +588,28 @@ function buildOverlays() {
     });
   }
 
-  return { root, nodes, spin, tickMaritime, updateLink, setOpacity };
+  return { root, nodes, spin, tickMaritime, updateLink, setOpacity, materials };
+}
+
+// Clip an overlay to land using the globe's specular (water) mask, sampled with the
+// same sphere UVs the globe shader uses (u + 0.25).
+function maskToLand(material, earthUniforms) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.specMap = earthUniforms.specMap;
+    shader.uniforms.hasSpec = earthUniforms.hasSpec;
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vSphere;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvSphere = position;");
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform sampler2D specMap;\nuniform float hasSpec;\nvarying vec3 vSphere;")
+      .replace("#include <dithering_fragment>", `#include <dithering_fragment>
+        vec3 sp = normalize(vSphere);
+        vec2 suv = vec2(atan(sp.z, -sp.x) / 6.28318530718 + 0.25, 1.0 - acos(clamp(sp.y, -1.0, 1.0)) / 3.14159265359);
+        float water = texture2D(specMap, suv).r;
+        float landMask = mix(1.0, 1.0 - smoothstep(0.35, 0.65, water), hasSpec);
+        gl_FragColor.a *= landMask;`);
+  };
+  material.customProgramCacheKey = () => "land-mask";
 }
 
 function curvedPatch(lat, lon, radius, segments, lift) {

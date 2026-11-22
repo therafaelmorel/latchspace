@@ -252,8 +252,18 @@ export function createCinema(canvas, { onRestored }) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.NoToneMapping;
   renderer.setClearColor(0x07080a, 1);
-  const ratio = Math.min(window.devicePixelRatio || 1, mobile ? 1.25 : 1.5);
+  // Resolution is capped, then adapts: if frames run long during a zone move we
+  // render fewer pixels, and step back up once the GPU has headroom again.
+  const maxRatio = () => Math.min(window.devicePixelRatio || 1, mobile ? 1.25 : 1.5);
+  const minRatio = () => Math.min(maxRatio(), 0.75);
+  let ratio = maxRatio();
   renderer.setPixelRatio(ratio);
+  const frameLog = new Float32Array(36);
+  let frameCount = 0;
+  let lastFrameAt = 0;
+  let lastScaleAt = 0;
+  let upBlockedUntil = 0;
+  let lastDown = 0;
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(mobile ? 42 : 34, 1, 0.02, 40);
@@ -376,10 +386,105 @@ export function createCinema(canvas, { onRestored }) {
     else outLook.copy(outEye);
   }
 
+  function adapt(now) {
+    const gap = lastFrameAt ? now - lastFrameAt : 0;
+    lastFrameAt = now;
+    // Ignore paused tabs and the boot/upload window; only sustained cost counts.
+    if (!gap || gap > 400 || !booted) return;
+    frameLog[frameCount % frameLog.length] = gap;
+    frameCount += 1;
+    if (frameCount < frameLog.length || now - lastScaleAt < 900) return;
+    const sorted = Array.from(frameLog).sort((a, b) => a - b);
+    const median = sorted[sorted.length >> 1];
+    let next = ratio;
+    if (median > 21 && ratio > minRatio() + 0.01) {
+      // Jump straight to the size that should fit the frame budget: each resize
+      // reallocates the drawing buffer, so one step beats several small ones.
+      next = Math.max(minRatio(), Math.min(ratio * 0.84, ratio * Math.sqrt(16 / median)));
+      if (now - lastDown < 6000) upBlockedUntil = now + 12000;
+      lastDown = now;
+    } else if (median < 13.5 && ratio < maxRatio() - 0.01 && now > upBlockedUntil) {
+      next = Math.min(maxRatio(), ratio * 1.12);
+    }
+    if (Math.abs(next - ratio) < 0.01) return;
+    ratio = next;
+    lastScaleAt = now;
+    frameCount = 0;
+    renderer.setPixelRatio(ratio);
+    renderer.setSize(window.innerWidth, Math.max(1, window.innerHeight), false);
+  }
+
+  // Compile every program, upload every texture, and draw every zone overlay
+  // once before the reader gets there, so a first visit never stalls on a
+  // compile or a driver's first-draw work. The warm draw is overwritten by the
+  // real frame rendered right after it, so nothing flashes.
+  let warmState = 0;
+  function warmDraw() {
+    warmState = 2;
+    const flipped = [];
+    const culled = [];
+    const show = (obj) => {
+      if (!obj.visible) {
+        obj.visible = true;
+        flipped.push(obj);
+      }
+      if (obj.frustumCulled) {
+        obj.frustumCulled = false;
+        culled.push(obj);
+      }
+    };
+    Object.values(earth.overlays.nodes).forEach((node) => node.traverse(show));
+    [marker, cone, earth.clouds, earth.atmo].forEach(show);
+    scene.traverse((obj) => {
+      const list = obj.material ? (Array.isArray(obj.material) ? obj.material : [obj.material]) : [];
+      list.forEach((mat) => {
+        for (const key in mat) {
+          const value = mat[key];
+          if (value && value.isTexture) renderer.initTexture(value);
+        }
+      });
+    });
+    try {
+      renderer.render(scene, camera);
+    } finally {
+      flipped.forEach((obj) => { obj.visible = false; });
+      culled.forEach((obj) => { obj.frustumCulled = true; });
+    }
+  }
+
+  // The Meshy craft compiles off the main thread (KHR_parallel_shader_compile)
+  // while hidden, then appears, instead of freezing its first frame.
+  craft.group.visible = false;
+  craft.ready.then(() => {
+    craft.group.traverse((obj) => {
+      if (!obj.material) return;
+      const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+      list.forEach((mat) => {
+        for (const key in mat) {
+          const value = mat[key];
+          if (value && value.isTexture) renderer.initTexture(value);
+        }
+      });
+    });
+    craft.group.visible = true;
+    const pending = renderer.compileAsync ? renderer.compileAsync(craft.group, camera, scene) : null;
+    craft.group.visible = false;
+    return Promise.resolve(pending).catch(() => {}).then(() => {
+      craft.group.visible = true;
+      const idle = () => { warmState = 1; };
+      if (typeof requestIdleCallback === "function") requestIdleCallback(idle, { timeout: 600 });
+      else setTimeout(idle, 200);
+    });
+  }).catch(() => {
+    craft.group.visible = true;
+    warmState = 1;
+  });
+
   function resize() {
     const w = window.innerWidth;
     const h = Math.max(1, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, mobile ? 1.25 : 1.5));
+    ratio = Math.min(Math.max(ratio, minRatio()), maxRatio());
+    renderer.setPixelRatio(ratio);
     renderer.setSize(w, h, false);
     camera.aspect = w / Math.max(1, h);
     camera.updateProjectionMatrix();
@@ -388,6 +493,7 @@ export function createCinema(canvas, { onRestored }) {
   function draw(state) {
     if (api.lost) return { pins: [], beat: "hero" };
     const now = state.now;
+    if (!state.reduced) adapt(now);
     const dt = last ? Math.min(0.05, (now - last) / 1000) : 0.016;
     last = now;
     sunDirectionInto(Date.now(), sunArr);
@@ -496,6 +602,7 @@ export function createCinema(canvas, { onRestored }) {
       cone.quaternion.setFromUnitVectors(UP, tmpC.copy(aim).sub(shown.sat).normalize());
     }
 
+    if (warmState === 1) warmDraw();
     renderer.render(scene, camera);
     booted = true;
     if (!kicked) {

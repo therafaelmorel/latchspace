@@ -79,12 +79,21 @@ function updateFolio(scrollY) {
   });
 }
 
+const copies = [...document.querySelectorAll(".stage-copy")];
+const copyRects = new Array(copies.length);
+const copyOpacity = new Array(copies.length).fill("");
+
+// Read every copy block's rect once per frame, before any style writes,
+// so the frame never forces a second layout.
+function readCopies() {
+  for (let i = 0; i < copies.length; i += 1) copyRects[i] = copies[i].getBoundingClientRect();
+}
+
 function visibleCopy() {
-  const nodes = document.querySelectorAll(".stage-copy");
   let best = null;
   let bestArea = 0;
-  nodes.forEach((el) => {
-    const rect = el.getBoundingClientRect();
+  copyRects.forEach((rect) => {
+    if (!rect) return;
     const top = Math.max(rect.top, 0);
     const bottom = Math.min(rect.bottom, window.innerHeight);
     const area = Math.max(0, bottom - top) * rect.width;
@@ -120,8 +129,9 @@ function placeLabel(pin) {
 function fadeCopies() {
   const vh = window.innerHeight;
   const header = 72;
-  document.querySelectorAll(".stage-copy").forEach((el) => {
-    const rect = el.getBoundingClientRect();
+  copies.forEach((el, i) => {
+    const rect = copyRects[i];
+    if (!rect) return;
     const mid = (rect.top + rect.bottom) * 0.5;
     const center = vh * 0.68;
     const dist = Math.abs(mid - center);
@@ -130,7 +140,11 @@ function fadeCopies() {
     const centerFade = 1 - Math.max(0, Math.min(1, (dist - vh * 0.22) / (vh * 0.38)));
     let opacity = Math.min(fadeTop, fadeBot, 0.2 + 0.8 * centerFade);
     if (reducedMotion) opacity = opacity > 0.45 ? 1 : 0;
-    el.style.opacity = opacity.toFixed(3);
+    const value = opacity.toFixed(2);
+    if (copyOpacity[i] !== value) {
+      copyOpacity[i] = value;
+      el.style.opacity = value;
+    }
   });
 }
 
@@ -200,6 +214,7 @@ function frame(now) {
     cinema?.resize();
   }
   const lost = !!(cinema && cinema.lost);
+  readCopies();
   if (cinema && !lost) {
     const view = cinema.draw({
       now,
@@ -217,6 +232,9 @@ function frame(now) {
   } else if (lost) {
     canvas.classList.remove("is-on");
     paintPins([]);
+    fadeCopies();
+  } else {
+    fadeCopies();
   }
   const busy = (!reducedMotion && cinema && !lost) || scrolled;
   scrolled = false;
@@ -295,10 +313,15 @@ function bindPasses() {
 
 window.addEventListener("scroll", () => {
   scrolled = true;
+  if (!reducedMotion) {
+    // The rAF loop does all scroll-linked work once per frame.
+    ensureLoop();
+    return;
+  }
   updateFolio(window.scrollY);
+  readCopies();
   fadeCopies();
-  if (!reducedMotion) ensureLoop();
-  else if (cinema && !cinema.lost) {
+  if (cinema && !cinema.lost) {
     cinema.draw({ now: performance.now(), scrollY: window.scrollY, reduced: true, layout, pass });
   }
 }, { passive: true });
