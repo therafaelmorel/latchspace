@@ -30,6 +30,7 @@ const EARTH_FRAG = `
   uniform float hasBump;
   uniform float uDetail;
   uniform float uGraticule;
+  uniform float uGlint;
   varying vec2 vUv;
   varying vec3 vNormal;
   varying vec3 vWorld;
@@ -69,7 +70,7 @@ const EARTH_FRAG = `
     vec3 view = normalize(cameraPosition - vWorld);
     vec3 halfV = normalize(sun + view);
     float glint = pow(max(dot(n, halfV), 0.0), 64.0) * specMask * dayW;
-    color += glint * vec3(1.0, 0.96, 0.88);
+    color += glint * uGlint * vec3(1.0, 0.96, 0.88);
     float lx = abs(fract(vUv.x * 18.0 + 0.5) - 0.5);
     float ly = abs(fract(vUv.y * 9.0 + 0.5) - 0.5);
     float d = min(lx, ly);
@@ -267,6 +268,7 @@ export function createEarth(scene, renderer, { mobile, hiRes }) {
     hasBump: { value: 0 },
     uDetail: { value: 0 },
     uGraticule: { value: 0 },
+    uGlint: { value: 1 },
   };
 
   const surface = new THREE.Mesh(
@@ -374,6 +376,7 @@ export function createEarth(scene, renderer, { mobile, hiRes }) {
     const near = 1 - smoothstep(1.22, 1.72, alt);
     uniforms.uDetail.value = near;
     uniforms.uGraticule.value = smoothstep(2.15, 1.28, alt) * 0.09;
+    uniforms.uGlint.value = focus.glint == null ? 1 : focus.glint;
     const cloudGoal = (focus.cloud == null ? 1 : focus.cloud) * smoothstep(1.28, 1.9, alt);
     cloudUniforms.uOpacity.value = reduced ? cloudGoal : cloudUniforms.uOpacity.value + (cloudGoal - cloudUniforms.uOpacity.value) * (1 - Math.exp(-4 * dt));
     if (!reduced) {
@@ -439,11 +442,11 @@ function buildOverlays(earthUniforms) {
   const parcelMat = new THREE.MeshBasicMaterial({
     map: ndviTexture(),
     transparent: true,
-    opacity: 0.56,
+    opacity: 0.72,
     depthWrite: false,
     toneMapped: false,
   });
-  parcelMat.userData.baseOpacity = 0.56;
+  parcelMat.userData.baseOpacity = 0.72;
   maskToLand(parcelMat, earthUniforms);
   const parcels = new THREE.Mesh(curvedPatch(36.6, -119.7, 0.058, 32, 1.003), parcelMat);
   parcels.renderOrder = 3;
@@ -521,7 +524,7 @@ function buildOverlays(earthUniforms) {
   [0.15, 0.48, 0.78].forEach((t, index) => {
     latLon(31.7 + t * 1.3, -102.4 + t * 2.4, 1.012, _p);
     const mark = new THREE.Mesh(
-      new THREE.SphereGeometry(index === 1 ? 0.012 : 0.008, 12, 8),
+      new THREE.SphereGeometry(index === 1 ? 0.0045 : 0.003, 12, 8),
       new THREE.MeshBasicMaterial({ color: index === 1 ? signal : bone }),
     );
     mark.position.copy(_p);
@@ -542,7 +545,7 @@ function buildOverlays(earthUniforms) {
   ));
   const vessels = [0.18, 0.46, 0.72].map(() => {
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.016, 0.004, 0.006),
+      new THREE.BoxGeometry(0.009, 0.0025, 0.0035),
       new THREE.MeshBasicMaterial({ color: 0xf4f0e8 }),
     );
     maritime.add(mesh);

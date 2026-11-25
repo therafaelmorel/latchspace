@@ -1,4 +1,5 @@
 import { formatSubpoint, formatUTC, subpoint, LEAD, visualNow } from "./orbit.js";
+import { HOLD_INDEX } from "./shots.js";
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const finePointer = window.matchMedia("(pointer: fine)").matches;
@@ -36,14 +37,64 @@ function box(el, scrollY) {
   return { top, height: rect.height };
 }
 
+// The free area of a hold: the part of the viewport its text panel leaves
+// open while the section fills the screen. The camera frames into it.
+function freeArea(el, id) {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const header = 76;
+  const copy = el.querySelector(".stage-copy");
+  const sr = el.getBoundingClientRect();
+  const cr = copy ? copy.getBoundingClientRect() : null;
+  const industry = industryBeats.has(id);
+  let rect;
+  if (!cr) {
+    rect = { left: 0, right: vw, top: header, bottom: vh };
+  } else {
+    // The copy is bottom-aligned, so read it as it sits when the section's
+    // last screen is in view.
+    const copyTop = vh - (sr.bottom - cr.top);
+    if (vw >= 768) {
+      const railW = industry ? 150 : 32;
+      const side = { left: Math.min(vw - 240, cr.right - sr.left + 24), right: vw - railW, top: header, bottom: vh - 24 };
+      const above = { left: 48, right: vw - railW, top: header, bottom: Math.max(header + 160, copyTop - 16) };
+      const size = (r) => Math.min(r.right - r.left, r.bottom - r.top);
+      rect = size(side) >= size(above) * 0.9 ? side : above;
+    } else {
+      rect = { left: 0, right: vw, top: header, bottom: Math.max(header + 200, Math.min(vh * 0.62, copyTop + 24)) };
+    }
+  }
+  return {
+    cx: (rect.left + rect.right) * 0.5,
+    cy: (rect.top + rect.bottom) * 0.5,
+    w: rect.right - rect.left,
+    h: rect.bottom - rect.top,
+  };
+}
+
 function measureLayout() {
   const y = window.scrollY;
+  const free = {};
+  const beats = [];
+  document.querySelectorAll("[data-beat]").forEach((el) => {
+    const id = el.dataset.beat;
+    if (HOLD_INDEX[id] == null) return;
+    free[id] = freeArea(el, id);
+    beats.push({ id, hold: HOLD_INDEX[id], ...box(el, y) });
+  });
   layout = {
     vh: window.innerHeight,
-    beats: [...document.querySelectorAll("[data-beat]")].map((el) => ({ id: el.dataset.beat, ...box(el, y) })),
+    beats,
+    free,
     sections: [...document.querySelectorAll("[data-section]")].map((el) => ({ id: el.dataset.section, ...box(el, y) })),
   };
 }
+
+// QA aid: ?hold=<id> parks the camera on one hold regardless of scroll.
+const pinnedHold = (() => {
+  const id = new URLSearchParams(window.location.search).get("hold");
+  return id && HOLD_INDEX[id] != null ? HOLD_INDEX[id] : null;
+})();
 
 function updateClock(now, realMs = Date.now()) {
   const second = Math.floor(realMs / 1000);
@@ -105,13 +156,26 @@ function visibleCopy() {
   return best;
 }
 
-function placeLabel(pin) {
+const labelWidths = new Map();
+function labelWidth(el, text) {
+  let width = labelWidths.get(text);
+  if (width == null) {
+    if (el.textContent !== text) el.textContent = text;
+    el.hidden = false;
+    width = Math.ceil(el.getBoundingClientRect().width) || 176;
+    labelWidths.set(text, width);
+  }
+  return width;
+}
+
+function placeLabel(pin, width) {
   const w = window.innerWidth;
   const h = window.innerHeight;
-  const width = 176;
   const height = 24;
   let x = pin.labelX;
   let y = pin.labelY;
+  // Flip to the left of the pin rather than sliding over it.
+  if (x + width > w - 8 && pin.x - 14 - width >= 8) x = pin.x - 14 - width;
   x = Math.max(8, Math.min(w - width - 8, x));
   y = Math.max(76, Math.min(h - height - 12, y));
   const copy = visibleCopy();
@@ -123,7 +187,7 @@ function placeLabel(pin) {
       else y = Math.max(76, copy.top - height - 10);
     }
   }
-  return { x, y };
+  return { x, y, w: width };
 }
 
 function fadeCopies() {
@@ -158,10 +222,10 @@ function paintPins(pins) {
     line.style.display = pin ? "" : "none";
     if (dot) dot.style.display = pin ? "" : "none";
     if (!pin) return;
-    const label = placeLabel(pin);
+    const label = placeLabel(pin, pinLabels[i] ? labelWidth(pinLabels[i], pin.label) : 176);
     line.setAttribute("x1", pin.x.toFixed(1));
     line.setAttribute("y1", pin.y.toFixed(1));
-    line.setAttribute("x2", label.x.toFixed(1));
+    line.setAttribute("x2", (label.x < pin.x ? label.x + label.w : label.x).toFixed(1));
     line.setAttribute("y2", (label.y + 11).toFixed(1));
     if (dot) {
       dot.setAttribute("cx", pin.x.toFixed(1));
@@ -222,6 +286,7 @@ function frame(now) {
       reduced: reducedMotion,
       layout,
       pass,
+      hold: pinnedHold,
     });
     canvas.classList.add("is-on");
     document.documentElement.classList.remove("no-gl");
@@ -305,10 +370,39 @@ function bindPasses() {
       ensureLoop();
       if (reducedMotion && cinema) {
         measureLayout();
-        cinema.draw({ now: performance.now(), scrollY: window.scrollY, reduced: true, layout, pass });
+        reducedDraw();
       }
     });
   });
+}
+
+// Reduced motion: no camera travel. Each hold is a still frame; moving to
+// another hold fades through the background instead of flying there.
+let reducedHold = null;
+let fadeTimer = 0;
+function reducedDraw() {
+  if (!cinema || cinema.lost) return;
+  if (!layout) measureLayout();
+  const next = pinnedHold != null ? pinnedHold : cinema.holdAt(window.scrollY, layout);
+  const run = () => {
+    const view = cinema.draw({ now: performance.now(), scrollY: window.scrollY, reduced: true, layout, pass, hold: pinnedHold });
+    paintPins(view.pins);
+    document.body.classList.toggle("is-industries", industryBeats.has(view.beat));
+    document.body.classList.toggle("is-craft", craftBeats.has(view.beat));
+  };
+  if (reducedHold === null || next === reducedHold) {
+    reducedHold = next;
+    run();
+    return;
+  }
+  reducedHold = next;
+  clearTimeout(fadeTimer);
+  canvas.classList.add("is-cut");
+  paintPins([]);
+  fadeTimer = window.setTimeout(() => {
+    run();
+    canvas.classList.remove("is-cut");
+  }, 220);
 }
 
 window.addEventListener("scroll", () => {
@@ -321,9 +415,7 @@ window.addEventListener("scroll", () => {
   updateFolio(window.scrollY);
   readCopies();
   fadeCopies();
-  if (cinema && !cinema.lost) {
-    cinema.draw({ now: performance.now(), scrollY: window.scrollY, reduced: true, layout, pass });
-  }
+  reducedDraw();
 }, { passive: true });
 
 window.addEventListener("resize", () => {
@@ -354,13 +446,7 @@ function bootCinema() {
       scrolled = true;
       if (reducedMotion) {
         measureLayout();
-        cinema?.draw({
-          now: performance.now(),
-          scrollY: window.scrollY,
-          reduced: true,
-          layout,
-          pass,
-        });
+        reducedDraw();
       } else {
         ensureLoop();
       }
@@ -377,8 +463,14 @@ function bootCinema() {
     cinema.resize();
     if (reducedMotion) {
       measureLayout();
-      cinema.draw({ now: performance.now(), scrollY: window.scrollY, reduced: true, layout, pass });
+      reducedDraw();
       canvas.classList.add("is-on");
+      // Textures and the spacecraft arrive after boot; redraw the still when they do.
+      [1200, 3500, 8000].forEach((ms) => window.setTimeout(() => {
+        measureLayout();
+        reducedHold = null;
+        reducedDraw();
+      }, ms));
     } else {
       scrolled = true;
       ensureLoop();
@@ -392,6 +484,7 @@ function bootCinema() {
 requestAnimationFrame(bootCinema);
 
 document.fonts.ready.then(() => {
+  labelWidths.clear();
   needsResize = true;
   scrolled = true;
   if (!reducedMotion) ensureLoop();

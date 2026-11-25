@@ -2,10 +2,6 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 
-const _sunLocal = new THREE.Vector3();
-const _aim = new THREE.Vector3();
-const _qInv = new THREE.Quaternion();
-const _from = new THREE.Vector3();
 
 function canvasTex(draw, w, h) {
   const canvas = document.createElement("canvas");
@@ -215,6 +211,9 @@ export function createSpacecraft() {
     const barrel = findNozzle(pod);
     const dir = barrel.dir.clone().normalize();
     gimbal.quaternion.setFromUnitVectors(dir, new THREE.Vector3(1, 0, 0));
+    // Fixed pose: the terminal faces out to the side and slightly aft, where
+    // the laser-com close-up looks at it, clear of the solar wing.
+    gimbal.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.35));
     const scalar = group.scale.x || 1;
     group.scale.setScalar(1);
     group.updateWorldMatrix(true, true);
@@ -348,31 +347,11 @@ export function createSpacecraft() {
     const reduced = state.reduced;
     const goal = 1;
     deploy = reduced ? 1 : deploy + (goal - deploy) * (1 - Math.exp(-1.4 * dt));
-    _qInv.copy(group.quaternion).invert();
-    _sunLocal.copy(state.sun).applyQuaternion(_qInv);
-    const track = reduced ? 0 : Math.max(-0.12, Math.min(0.12, Math.atan2(_sunLocal.y, Math.abs(_sunLocal.x) + 0.2) * 0.25));
+    // The craft holds a fixed attitude for the camera: wings square to the
+    // bus and the terminal gimbal parked, so every close-up is repeatable.
     wings.forEach(({ pivot, sign }) => {
-      const folded = 1.15 * (1 - deploy);
-      pivot.rotation.z = sign * (folded + track * deploy);
+      pivot.rotation.z = sign * 1.15 * (1 - deploy);
     });
-    if (gimbal && state.target) {
-      gimbal.getWorldPosition(_from);
-      _aim.copy(state.target).sub(_from);
-      const parentQ = gimbal.parent.getWorldQuaternion(_qInv);
-      _aim.applyQuaternion(parentQ.invert());
-      const yaw = Math.atan2(_aim.x, _aim.z);
-      const pitch = Math.atan2(-_aim.y, Math.hypot(_aim.x, _aim.z));
-      const limit = state.mode === "nadir" ? 0.45 : 0.12;
-      const ty = Math.max(-limit, Math.min(limit, yaw));
-      const tx = Math.max(-limit, Math.min(limit, pitch));
-      if (reduced) {
-        gimbal.rotation.y = Math.PI / 2 + ty;
-        gimbal.rotation.x = tx;
-      } else {
-        gimbal.rotation.y += (Math.PI / 2 + ty - gimbal.rotation.y) * (1 - Math.exp(-3 * dt));
-        gimbal.rotation.x += (tx - gimbal.rotation.x) * (1 - Math.exp(-3 * dt));
-      }
-    }
     if (plumeMat) {
       const glow = state.mode === "tour" && state.tour === "propulsion" ? 0.75 : 0.38;
       plumeMat.opacity = reduced ? glow : glow + Math.sin(state.now * 0.004) * 0.08;
